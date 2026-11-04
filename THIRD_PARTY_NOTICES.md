@@ -1,0 +1,25 @@
+# Third-party notices
+
+VitaSend as a whole is licensed under the **GNU General Public License v3.0 or later** (see [LICENSE](LICENSE)). It contains
+or builds on the following work.
+
+| Component | Where | Licence | Notes |
+|---|---|---|---|
+| **VitaShell** by TheFloW (and contributors) | `src/headbin.c`, the install steps in `src/vpk.c` and `plat_promote()` in `src/plat_vita.c` | GPL-3.0 | The `head.bin` template and hash layout, and the sequence "load PAF + ScePromoterUtil, promote the unpacked folder", follow VitaShell's package installer. This is why the whole project is GPL-3.0. <https://github.com/TheOfficialFloW/VitaShell> |
+| **mbedTLS** 3.6.2 | downloaded and built by `scripts/build-mbedtls.sh` (not included in this repository) | Apache-2.0 OR GPL-2.0-or-later | TLS, certificates, SHA-256, random numbers. <https://github.com/Mbed-TLS/mbedtls> |
+| **stb_truetype** v1.26 by Sean Barrett | `src/stb_truetype.h` | Public domain / MIT (your choice, see the end of the file) | font rasteriser |
+| **Poppins** | compiled into `src/fontdata.c` (cut down and renamed "LS Sans") | SIL Open Font License 1.1 | <https://github.com/itfoundry/Poppins> |
+| **Liberation Sans** | compiled into `src/fontdata.c` (cut down and renamed "LS Fallback") | SIL Open Font License 1.1 | Greek / Cyrillic / rare letters. Full texts and copyright lines in [fonts/LICENSES.txt](fonts/LICENSES.txt) |
+| **VitaSDK** stub libraries and headers | linked / used at build time | various open licences | <https://vitasdk.org/> |
+| **LocalSend protocol** by Tien Do Nam and contributors | specification only, no code | Apache-2.0 | <https://github.com/localsend/protocol> |
+
+The ZIP / DEFLATE reader, HTTP server and client, JSON, discovery, the transfer engines, the 2D renderer, the widgets and
+the icons are original code of this project.
+
+## Trademarks and affiliation
+
+VitaSend is an **independent, unofficial** project. It is not affiliated with, endorsed by or sponsored by the LocalSend
+project, Sony Interactive Entertainment or any other company. "LocalSend" is the name of another project; "PlayStation" and
+"PS Vita" are trademarks of Sony Interactive Entertainment Inc. They are used here only to say what the software works
+with. The PlayStation button symbols drawn by the interface (cross, circle, square, triangle) are simple geometric shapes
+used to tell users which button to press.

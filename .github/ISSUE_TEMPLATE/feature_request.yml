@@ -1,0 +1,21 @@
+name: Feature request
+description: An idea for VitaSend
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like VitaSend to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is it useful? Is there a workaround today?
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help?
+      options:
+        - label: I would like to work on this myself
+        - label: I can test it on a real Vita

@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The more of the fields below you fill in, the faster it can be fixed.
+        **Security problems:** please do not report them here, see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: VitaSend version
+      description: Left menu, bottom (for example 0.9.0) or Settings > About
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Your Vita
+      description: Model (PCH-1000 / PCH-2000 / PS TV), firmware version, HENkaku / enso, "unsafe homebrew" on or off
+    validations:
+      required: true
+  - type: input
+    id: other
+    attributes:
+      label: The other device and its LocalSend app
+      description: For example "LocalSend 1.17 on Windows 11" or "LocalSend on Android 14"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ...\n3. ..."
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Settings > Log shows it on the Vita; the same text is in ux0:data/VitaSend/log.txt. Paste the last lines (remove anything private).
+      render: text

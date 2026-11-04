@@ -1,0 +1,44 @@
+name: Release
+
+# Push a tag like v0.9.1 and this builds the VPK and publishes a GitHub release with it attached.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: vitasdk/vitasdk:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools (if the image lacks them)
+        run: |
+          for t in cmake curl bzip2 python3 make; do command -v $t >/dev/null || NEED="$NEED $t"; done
+          [ -z "$NEED" ] || (apt-get update && apt-get install -y $NEED)
+      - name: Build mbedTLS for the Vita
+        run: ./scripts/build-mbedtls.sh
+      - name: Build the VPK
+        run: |
+          mkdir build && cd build
+          cmake ..
+          make -j"$(nproc)"
+          sha256sum *.vpk > SHA256SUMS.txt
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/*.vpk
+            build/SHA256SUMS.txt
+          generate_release_notes: true
+          body: |
+            ## Install
+            1. Copy the `.vpk` to your PS Vita (USB or FTP) and install it with **VitaShell**.
+            2. In the HENkaku settings enable **"Enable unsafe homebrew"** (the installer needs extended permissions).
+            3. Start **VitaSend** and open LocalSend on another device on the same Wi-Fi.
+
+            See the [README](https://github.com/${{ github.repository }}/blob/main/README.md) and the [user guide](https://github.com/${{ github.repository }}/blob/main/docs/USER_GUIDE.md).
+            VitaSend is GPL-3.0-or-later and not affiliated with LocalSend or Sony.

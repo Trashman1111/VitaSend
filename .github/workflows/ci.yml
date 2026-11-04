@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # The whole program (except the two Vita files) built for Linux with sanitizers, and driven by the test scripts.
+  host-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake python3 openssl curl bzip2
+      - name: Build mbedTLS for the PC
+        run: ./scripts/build-mbedtls.sh host
+      - name: Build the PC test program
+        run: make -C host SAN=1
+      - name: Protocol checks
+        run: |
+          python3 host/fake_peer.py
+          python3 host/fake_peer.py --chunked-replies
+      - name: Transfer, installer, UI and touch checks
+        run: python3 host/test_transfer.py
+
+  # The real thing: the VPK, built with VitaSDK in its official Docker image.
+  vita-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: vitasdk/vitasdk:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools (if the image lacks them)
+        run: |
+          for t in cmake curl bzip2 python3 make; do command -v $t >/dev/null || NEED="$NEED $t"; done
+          [ -z "$NEED" ] || (apt-get update && apt-get install -y $NEED)
+      - name: Build mbedTLS for the Vita
+        run: ./scripts/build-mbedtls.sh
+      - name: Build the VPK
+        run: |
+          mkdir build && cd build
+          cmake ..
+          make -j"$(nproc)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VitaSend-vpk
+          path: build/*.vpk

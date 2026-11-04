@@ -1,0 +1,22 @@
+# build output
+build/
+*.vpk
+*.self
+*.velf
+*.elf
+host/localsend-host
+*.o
+
+# dependencies built by scripts/build-mbedtls.sh
+deps/
+
+# python
+__pycache__/
+*.pyc
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
