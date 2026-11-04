@@ -142,4 +142,4 @@ The [LocalSend](https://github.com/localsend/localsend) protocol is by Tien Do N
 "PS Vita" are trademarks of Sony Interactive Entertainment Inc.; this project is not affiliated with or endorsed by either
 company.
 
-Made by **trashman**. Found a bug or have an idea? [Open an issue](../../issues).
+Made by **trashman**. Developed with AI assistance. Found a bug or have an idea? [Open an issue](../../issues).
