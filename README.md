@@ -8,8 +8,8 @@
 over your own Wi-Fi, no cloud, no cable.** A native homebrew app written in C, with a touch-friendly interface, a built-in
 `.vpk` installer and a screensaver that shows your transfer progress.
 
-[![CI](https://github.com/YOURNAME/vitasend/actions/workflows/ci.yml/badge.svg)](https://github.com/YOURNAME/vitasend/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/YOURNAME/vitasend?include_prereleases)](https://github.com/YOURNAME/vitasend/releases)
+[![CI](https://github.com/Trashman1111/vitasend/actions/workflows/ci.yml/badge.svg)](https://github.com/Trashman1111/vitasend/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Trashman1111/vitasend?include_prereleases)](https://github.com/Trashman1111/vitasend/releases)
 [![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 > VitaSend is an independent project. It speaks the open LocalSend protocol but is **not affiliated with** the LocalSend
