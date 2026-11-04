@@ -75,13 +75,13 @@ Everything else - controls, settings, the installer, troubleshooting - is in the
 
 VitaSend is a **beta**. What has been checked:
 
-* The author uses it on a real PS Vita with the **LocalSend desktop app**: receiving and sending files, text, installing
+* This is being used on a real PS Vita **PCH-1004** with the **LocalSend Windows, Linux and Android App**: receiving and sending files, text, installing
   packages, touch, screensaver, sound.
 * About **520 automated checks** run on a PC against the real mbedTLS under AddressSanitizer / UBSan: the protocol
   (against stand-ins that play the other LocalSend device), the transfer engines, the `.vpk` installer (ZIP / DEFLATE
   compared with Python's `zlib`, corrupted and malicious packages), and the whole interface including simulated touch.
   See [docs/TESTING.md](docs/TESTING.md).
-* **Not yet tested:** the LocalSend apps for Android / iOS / macOS, other Vita models (PCH-1000 vs PCH-2000, PS TV) and
+* **Not yet tested:** the LocalSend apps for iOS / macOS, other Vita models (PCH-100x vs PCH-200x, PS TV) and
   firmware versions, ensō-only setups. Reports are very welcome - use the *Bug report* template and attach the log
   (*Settings > Log*).
 
