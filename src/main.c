@@ -23,6 +23,8 @@
 #include "rx.h"
 #include "settings.h"
 #include "tls.h"
+#include "unzip.h"
+#include "update.h"
 #include "touch.h"
 #include "util.h"
 #include "ui.h"
@@ -228,6 +230,8 @@ int main(int argc, char **argv)
     xfer_init();
     rx_init();
     vpk_init();
+    unzip_init();
+    update_init();
     history_load(dir);
     peers_init();
     ls_log("device name: %s", g_id.alias);
@@ -245,7 +249,17 @@ int main(int argc, char **argv)
     bool asked = false;                                 /* the dialog has been shown at least once */
     bool offline = false;                               /* "Continue without Wi-Fi" was chosen */
     const char *note = NULL;                            /* a line in the dialog: why the settings did not open */
+    unsigned grace = wifi_grace_ms();
     while (!g_quit && !offline && !plat_net_local_ip(ip)) {
+        if (plat_time_ms() - t_start < grace) {          /* Wi-Fi may still be coming up (right after waking the Vita): wait a little before asking */
+            set_status(C_DIM, "Waiting for Wi-Fi...");
+            redraw();
+            if (ui_buttons() & UI_BTN_START) g_quit = true;
+            plat_keep_awake();
+            plat_sleep_ms(100);
+            if (run_seconds && plat_time_ms() - t_start > run_seconds * 1000u) g_quit = true;
+            continue;
+        }
         asked = true;
         wifi_poll(false);
         wifi_state ws = wifi_get();
@@ -292,6 +306,7 @@ int main(int argc, char **argv)
     ls_log("shutting down...");
     g_quit = true;
     xfer_request_cancel();
+    update_cancel();
     s_footer = "";
     set_status(C_DIM, "Shutting down...");
     redraw();

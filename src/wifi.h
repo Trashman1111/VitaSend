@@ -22,6 +22,7 @@ wifi_state wifi_get(void);
 void wifi_request_on(void);
 /* What a Wi-Fi button does: asks the system to switch Wi-Fi on; once that was refused, it opens the Vita's Wi-Fi settings instead
  * (and says so in the log). */
+unsigned wifi_grace_ms(void);               /* at start: how long to wait for Wi-Fi to come up by itself before asking (it needs a few seconds after waking from sleep) */
 void wifi_user_action(void);
 /* The user gave up waiting. */
 void wifi_cancel(void);

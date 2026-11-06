@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: VitaSend version
-      description: Left menu, bottom (for example 0.9.4) or Settings > About
+      description: Left menu, bottom (for example 0.9.5) or Settings > About
     validations:
       required: true
   - type: input

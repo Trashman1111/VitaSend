@@ -56,6 +56,12 @@ int  conn_read(conn_t *c, void *buf, size_t cap);
 int  conn_write_all(conn_t *c, const void *buf, size_t len);
 /* Fingerprint of the certificate the other side presented (client side). */
 bool conn_peer_fingerprint(conn_t *c, char out[65]);
+/* Connects to ip:port and checks the server: its certificate must chain to a trusted root (the built-in list, cacerts.c) and
+ * carry the name `host`, which is also sent as the server name. For the update check (GitHub); LocalSend peers use
+ * conn_connect() and the fingerprint. NULL on failure, `why` then holds a short readable reason. (Certificate dates are not
+ * checked: the Vita's clock is often wrong and this mbedTLS build has no time support.) */
+conn_t *conn_connect_verified(const char *ip, uint16_t port, const char *host, int timeout_ms, char *why, size_t whycap);
+int  tls_roots_usable(void);                  /* how many of the built-in root certificates can be read */
 void conn_set_timeout(conn_t *c, int ms);
 void conn_close(conn_t *c);
 

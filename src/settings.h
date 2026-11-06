@@ -34,6 +34,8 @@ typedef struct {
     int      screensaver;                /* seconds without input before the screensaver starts; 0 = never */
     int      theme;                      /* THEME_DARK / THEME_OLED (see ui.h) */
     bool     hide_ids;                   /* hide this device's IP address and fingerprint on screen */
+    bool     check_updates;              /* look for a new version on GitHub when the app starts (default on) */
+    int      update_asked_day;           /* YYYYMMDD of the last day the "new version" question was shown (0 = never) */
     char     pin[SET_PIN_MAX + 1];       /* "" = no PIN required to send to us */
     char     wifi_uri[96];               /* config.json only ("wifiSettingsUri"): the system page the Wi-Fi settings button opens; "" = built-in default */
     int      nfavs;
@@ -56,6 +58,8 @@ void settings_set_show_battery(bool on);
 void settings_set_show_clock(bool on);
 void settings_set_screensaver(int seconds);
 void settings_set_hide_ids(bool hide);
+void settings_set_check_updates(bool on);
+void settings_set_update_asked_day(int ymd);
 void settings_set_theme(int theme);
 void settings_wifi_uri(char *out, size_t cap);     /* the configured address of the Wi-Fi settings page ("" = default) */
 void settings_set_pin(const char *pin);             /* digits only, "" clears */

@@ -31,6 +31,7 @@ code map see [ARCHITECTURE.md](ARCHITECTURE.md); for the wire protocol see [PROT
 | **CMake** | the build; detects optional SDK libraries |
 | **[stb_truetype](https://github.com/nothings/stb)** | rasterising the embedded fonts |
 | **[stb_image](https://github.com/nothings/stb)** | decoding pictures for the viewer (JPEG, PNG, BMP, GIF) |
+| **[certifi](https://github.com/certifi/python-certifi)** (Mozilla's root list, MPL-2.0) | the root certificates built into the update check (`tools/gen_cacerts.py` writes `src/cacerts.c`) |
 | **Poppins, Liberation Sans** (SIL OFL) | the UI fonts, cut down and compiled into the program by `tools/gen_fontdata.py` |
 | **[vita-headers](https://github.com/vitasdk/vita-headers)** | checking the Vita-only files compile against the real API without a full SDK build |
 | **[VitaShell](https://github.com/TheOfficialFloW/VitaShell)** (source, GPL-3.0) | reference for the package installer: the `head.bin` format and the PAF / ScePromoterUtil procedure |

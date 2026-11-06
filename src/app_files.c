@@ -4,6 +4,7 @@
  * Author: trashman (VitaSend)
  */
 #include "app_int.h"
+#include "unzip.h"
 
 /* ---- state of the file browser and the Files tab ---- */
 static browser_mode s_bmode;
@@ -334,17 +335,19 @@ void files_draw(const xfer_status *x)
 
     ui_cursor_clamp(&b->cur, b->nent, BROWSER_ROWS);
     if (b->nent == 0) gfx_text(CONTENT_X + 24, BROWSER_TOP + 20, 16, GW_REG, C_DIM, GA_LEFT, "(empty)");
-    bool cur_vpk = false, cur_dir = false, cur_view = false;
+    bool cur_vpk = false, cur_dir = false, cur_view = false, cur_zip = false;
     for (int i = 0; i < BROWSER_ROWS && b->cur.top + i < b->nent; i++) {
         int idx = b->cur.top + i;
         int y = BROWSER_TOP + i * BROWSER_STEP, cy = y + 17;
         const plat_dirent *e = &b->ent[idx];
         bool vpk = !e->is_dir && vpk_has_extension(e->name);
+        bool zip = !e->is_dir && unzip_has_extension(e->name);
         bool cur = idx == b->cur.sel;
         ui_hit_row(CONTENT_X, y - 2, CONTENT_W - 14, BROWSER_STEP, &b->cur, idx, UI_BTN_CROSS);   /* tap: open it (a folder, a picture, a text, a package) */
         if (b->path[0]) ui_hit_call(CONTENT_X, y - 2, 56, BROWSER_STEP, files_tick_tap, NULL, idx);       /* the tick circle */
         if (cur) {
             cur_vpk = vpk;
+            cur_zip = zip;
             cur_dir = e->is_dir;
             cur_view = !e->is_dir && view_kind(e->name) != 0;
             gfx_rrect(CONTENT_X, y, CONTENT_W - 14, 34, 10, C_ACCENT_BG);
@@ -362,7 +365,7 @@ void files_draw(const xfer_status *x)
                  e->is_dir ? C_ACCENT_HI : (vpk ? C_ACCENT_HI : C_DIM));
         char label[260];
         snprintf(label, sizeof label, "%s%s", e->name, e->is_dir && b->path[0] ? "/" : "");
-        int rw = (e->is_dir ? 0 : 100) + (vpk ? 70 : 0);
+        int rw = (e->is_dir ? 0 : 100) + (vpk ? 70 : 0) + (zip ? 62 : 0);
         bool mv_row = false;                                              /* a row that is waiting to be moved is shown dimmed */
         if (s_nmv > 0 && b->path[0]) {
             char fp[PATH_CAP];
@@ -377,6 +380,7 @@ void files_draw(const xfer_status *x)
             rx -= gfx_text(rx, cy, 14, GW_REG, C_DIM, GA_RIGHT, sz) + 10;
         }
         if (vpk) ui_chip(rx, cy, "VPK", C_ACCENT_HI);
+        else if (zip) ui_chip(rx, cy, "ZIP", C_ACCENT_HI);
         gfx_focus(false);
     }
     ui_scrollbar(CONTENT_R - 6, BROWSER_TOP, BROWSER_ROWS * BROWSER_STEP - 4, b->cur.top, BROWSER_ROWS, b->nent);
@@ -396,6 +400,7 @@ void files_draw(const xfer_status *x)
         else if (s_nsel >= 2) open_label = "X Open ticked";
         else if (cur_vpk) open_label = "X Install";
         else if (cur_view) open_label = "X View";
+        else if (cur_zip) open_label = "X Unzip";
     }
     char hints[160];
     if (!b->path[0]) snprintf(hints, sizeof hints, "DUD Move|X Open");
@@ -460,6 +465,7 @@ static void files_open_file(const char *full, bool is_vpk)
         return;
     }
     if (is_vpk) { install_open(full, SC_FILES); return; }
+    if (unzip_has_extension(full)) { unzip_ui_open(full, SC_FILES); return; }
     if (view_kind(full)) { const char *one = full; view_open(&one, 1, 0, SC_FILES); return; }
     toast("This kind of file cannot be opened here - SQUARE ticks it, TRIANGLE sends it");
 }
@@ -504,7 +510,7 @@ void files_input(uint32_t p)
 
 /* ---- options menu for the Files tab ---- */
 
-enum { MI_TICKALL, MI_UNTICK, MI_RENAME, MI_DELETE, MI_NEWDIR, MI_MOVE, MI_MOVEHERE, MI_MOVECANCEL, MI_COPY };
+enum { MI_TICKALL, MI_UNTICK, MI_RENAME, MI_DELETE, MI_NEWDIR, MI_MOVE, MI_MOVEHERE, MI_MOVECANCEL, MI_COPY, MI_UNZIP };
 typedef struct { int id; char label[140]; } menu_item;
 #define MENU_MAX  14                                  /* entries a menu can hold ... */
 #define MENU_ROWS 9                                   /* ... and how many are visible at once (the rest scrolls) */
@@ -552,6 +558,7 @@ static void menu_open(void)
     else if (have) menu_add(MI_COPY, "Copy %.70s", name);
     if (s_nsel > 0) menu_add(MI_MOVE, "Move the %d ticked item%s", s_nsel, s_nsel == 1 ? "" : "s");
     else if (have) menu_add(MI_MOVE, "Move %.70s", name);
+    if (have && s_nsel == 0 && !b->ent[b->cur.sel].is_dir && unzip_has_extension(name)) menu_add(MI_UNZIP, "Unzip %.70s", name);
     if (have) menu_add(MI_RENAME, "Rename %.70s", name);
     if (s_nsel > 0) menu_add(MI_DELETE, "Delete the %d ticked item%s", s_nsel, s_nsel == 1 ? "" : "s");
     else if (have) menu_add(MI_DELETE, "Delete %.70s", name);
@@ -658,20 +665,33 @@ static void untick_path(const char *path)
     }
 }
 
+/* After the confirmation: the deleting runs in app_fileops.c (a dialog with a progress bar); it reports back below. */
 void do_delete(void)
 {
-    int ok = 0, bad = 0;
-    char first_bad[96] = "";
-    for (int i = 0; i < s_ndel; i++) {
-        if (delete_tree(s_del[i], 0)) ok++;
-        else { if (!first_bad[0]) ls_strlcpy(first_bad, base_name(s_del[i]), sizeof first_bad); bad++; }
-        untick_path(s_del[i]);
-    }
-    ls_log("deleted %d item(s), %d could not be deleted", ok, bad);
+    if (s_ndel > 0 && delete_start(s_del, s_ndel)) go(SC_DELETE);
+    else { s_ndel = 0; go(SC_FILES); }
+}
+
+void files_delete_finished(int ok, int bad, const char *first_bad, bool cancelled)
+{
+    for (int i = 0; i < s_ndel; i++)
+        if (!plat_path_info(s_del[i], NULL, NULL)) untick_path(s_del[i]);           /* what is gone cannot stay ticked */
     s_ndel = 0;
-    if (bad) toast("Deleted %d, but %.50s could not be deleted", ok, first_bad);
-    else toast("Deleted %d item%s", ok, ok == 1 ? "" : "s");
+    files_ensure();
     files_reload();
+    if (A.sc == SC_DELETE) go(SC_FILES);
+    if (cancelled) toast("Stopped - %d item%s deleted, the rest stays", ok, ok == 1 ? "" : "s");
+    else if (bad) toast("Deleted %d, but %.50s could not be deleted", ok, first_bad);
+    else toast("Deleted %d item%s", ok, ok == 1 ? "" : "s");
+}
+
+void files_focus_name(const char *name)
+{
+    files_ensure();
+    files_reload();
+    for (int i = 0; i < s_fb.nent; i++)
+        if (!strcmp(s_fb.ent[i].name, name)) { s_fb.cur.sel = i; break; }
+    ui_cursor_clamp(&s_fb.cur, s_fb.nent, BROWSER_ROWS);
 }
 
 static bool valid_file_name(const char *n)
@@ -694,7 +714,7 @@ static bool same_dir(const char *a, const char *b)
 }
 
 /* A name for the copy that does not exist yet: "ux0:data/a.bin" -> "ux0:data/a (1).bin" ("name (1)" for a folder). */
-static bool unique_path(char *path, size_t cap, bool is_dir)
+bool unique_path(char *path, size_t cap, bool is_dir)
 {
     if (!plat_path_info(path, NULL, NULL)) return true;
     char stem[PATH_CAP], ext[64] = "";
@@ -847,6 +867,7 @@ static void menu_run(int id)
         open_osk(OP_RENAME, "Rename", b->ent[b->cur.sel].name, 120, false, SC_FILES);
         break;
     case MI_DELETE:  delete_ask(); break;
+    case MI_UNZIP:   unzip_ui_open(full, SC_FILES); break;
     case MI_MOVE:    move_mark(false); break;
     case MI_COPY:    move_mark(true); break;
     case MI_MOVEHERE: go(SC_FILES); move_here(); break;

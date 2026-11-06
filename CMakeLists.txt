@@ -13,11 +13,11 @@ endif()
 project(VitaSend C)
 include("$ENV{VITASDK}/share/vita.cmake")
 
-message(STATUS "VitaSend v0.9.4 (LiveArea version 00.94)")
+message(STATUS "VitaSend v0.9.5 (LiveArea version 00.95)")
 
 # ---- options ----------------------------------------------------------------------------------------
 set(VITA_TITLEID  "LSND00001")          # 9 characters: 4 letters + 5 digits
-set(VITA_VERSION  "00.94")              # shown in LiveArea / VitaShell (digits only: 00.94 = v0.9.4)
+set(VITA_VERSION  "00.95")              # shown in LiveArea / VitaShell (digits only: 00.95 = v0.9.5)
 set(VITA_APP_NAME "VitaSend")
 
 option(LS_UNSAFE "Build the app with extended permissions (\"unsafe homebrew\") - needed by the .vpk installer" ON)
@@ -65,6 +65,7 @@ set(LS_SOURCES
   src/zip.c
   src/headbin.c
   src/vpk.c
+  src/unzip.c
   src/app.c
   src/app_files.c
   src/app_pages.c
@@ -72,7 +73,11 @@ set(LS_SOURCES
   src/app_dialogs.c
   src/app_install.c
   src/app_move.c
+  src/app_fileops.c
   src/app_view.c
+  src/app_update.c
+  src/update.c
+  src/cacerts.c
   src/wifi.c
   src/app_saver.c
   src/plat_vita.c
@@ -136,7 +141,7 @@ else()
   vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
 endif()
 
-vita_create_vpk(${PROJECT_NAME}-v094.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
+vita_create_vpk(${PROJECT_NAME}-v095.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME    ${VITA_APP_NAME}
   FILE sce_sys/icon0.png                          sce_sys/icon0.png

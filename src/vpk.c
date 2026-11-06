@@ -101,6 +101,9 @@ static bool grab_sink(void *ctx, const uint8_t *data, size_t n)
 
 /* ============================================================== inspect */
 
+static volatile bool s_allow_self;
+void vpk_allow_self(bool allow) { s_allow_self = allow; }
+
 static bool inspect_open(zip_file *z, vpk_info *info)
 {
     int sfo_i = zip_find(z, "sce_sys/param.sfo");
@@ -144,7 +147,7 @@ static bool inspect_open(zip_file *z, vpk_info *info)
         if (!z->e[i].is_dir) info->files++;
     info->unpacked = z->total_unpacked;
 
-    if (strcmp(info->titleid, plat_own_title_id()) == 0) {
+    if (strcmp(info->titleid, plat_own_title_id()) == 0 && !s_allow_self) {
         snprintf(info->err, sizeof info->err, "This is VitaSend itself - it cannot replace itself while it is running");
         return false;
     }

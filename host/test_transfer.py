@@ -34,7 +34,7 @@ LOCAL_IP = _local_ip()
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
 ap.add_argument("--binary", default=os.path.join(HERE, "localsend-host"))
-ap.add_argument("--only", default="", choices=["", "recv", "send", "extra", "install", "privacy", "theme", "touch", "migrate", "files", "exists", "retry", "queue", "polish", "dpad", "x11", "x13", "move", "wifi", "view", "shots"])
+ap.add_argument("--only", default="", choices=["", "recv", "send", "extra", "install", "privacy", "theme", "touch", "migrate", "files", "exists", "retry", "queue", "polish", "dpad", "x11", "x13", "move", "wifi", "view", "update", "fileops", "shots"])
 ap.add_argument("--shots-dir", default=os.path.join(HERE, "..", "docs", "screens"), help="with --only shots: where the pictures go")
 ap.add_argument("--keep", action="store_true")
 args = ap.parse_args()
@@ -66,8 +66,8 @@ def sha(b):
 # =========================================================================== the program under test
 OSK_ROWS = ["1234567890-_=+", "qwertyuiop[]()", "asdfghjkl;:'\"/", "zxcvbnm,.?!@#$", "QWERTYUIOP{}<>", "ASDFGHJKL%^&*\\", "ZXCVBNM`~|    "]
 
-VERSION = "0.9.4"
-SET_ROWS = {"name": 0, "pin": 1, "hide": 2, "folder": 3, "accept": 4, "exists": 5, "autoinst": 6, "theme": 7, "battery": 8, "clock": 9, "saver": 10, "sound": 11, "about": 12, "log": 13, "quit": 14}
+VERSION = "0.9.5"
+SET_ROWS = {"name": 0, "pin": 1, "hide": 2, "folder": 3, "accept": 4, "autoinst": 5, "exists": 6, "theme": 7, "battery": 8, "clock": 9, "saver": 10, "sound": 11, "about": 12, "checkupd": 13, "log": 14, "quit": 15}
 
 def osk_keys(text, digits=False):
     """Button presses that type `text` on the on-screen keyboard (cursor starts at the top left)."""
@@ -183,7 +183,7 @@ class Vita:
             t = l[1:].strip()
             if not t or t.startswith("[UP") or t.startswith("/") or re.match(r"\[[ x]\]\s", t): continue
             t = re.split(r"\s{2,}", t)[0]
-            if t.startswith(("Send ", "Install", "Tick ", "Untick ", "Rename ", "Delete ", "New folder here", "Open ", "Move ", "Copy ", "Cancel the move", "Cancel the copy")): out.append(t)
+            if t.startswith(("Send ", "Install", "Tick ", "Untick ", "Unzip ", "Rename ", "Delete ", "New folder here", "Open ", "Move ", "Copy ", "Cancel the move", "Cancel the copy")): out.append(t)
         return out
     def menu_index(self, prefix):
         return next(n for n, t in enumerate(self.menu_items()) if t.startswith(prefix))
@@ -195,7 +195,7 @@ class Vita:
         for l in lines[i + 1:]:
             if l.startswith(">"):
                 t = re.split(r"\s{2,}", l[1:].strip())[0]
-                if t.startswith(("Send ", "Install", "Tick ", "Untick ", "Rename ", "Delete ", "New folder here", "Open ", "Move ", "Copy ", "Cancel the move", "Cancel the copy")): return t
+                if t.startswith(("Send ", "Install", "Tick ", "Untick ", "Unzip ", "Rename ", "Delete ", "New folder here", "Open ", "Move ", "Copy ", "Cancel the move", "Cancel the copy")): return t
         return ""
     def menu_pick(self, prefix):
         """Chooses an entry of the options menu with the buttons (the menu scrolls when it has more than 9 entries)."""
@@ -221,7 +221,7 @@ class Vita:
         if "screen=settings" not in self.screen():
             self.keys("l"); self.wait_screen("screen=settings", 5)
         if "sidebar" in self.screen(): self.keys("right"); time.sleep(0.3)      # (D-pad test) a stray LEFT may have moved the focus
-        self.keys(*(["up"] * 13), *(["down"] * SET_ROWS[name]))
+        self.keys(*(["up"] * 16), *(["down"] * SET_ROWS[name]))
         time.sleep(0.2)
     def pick(self, option):
         """The setting row is highlighted: opens its dropdown list and takes option 0.. (the cursor starts on the current value)."""
@@ -1597,14 +1597,21 @@ def test_polish():
     V.wait_screen("screen=settings", 5)
     check("the battery is shown on every page", V.has("87%"), V.screen())
     check("settings are divided by headers", V.has("THIS DEVICE") and V.has("RECEIVING"), V.screen())
+    V.goto_setting("exists")
+    wait_for(lambda: "When a received file" in V.screen(), 5)
+    scr = V.screen()
+    qi, ii, ei = scr.find("Quick Save"), scr.find("Install received"), scr.find("When a received file")
+    check("'Install received .vpk files' sits right under Quick Save, then 'When a received file already exists'", 0 <= qi < ii < ei, scr)
     V.goto_setting("sound")
     check("headers follow the scrolling list", wait_for(lambda: V.has("DISPLAY AND SOUND") and V.has("On - a short chime") and "THIS DEVICE" not in V.screen(), 6), V.screen())
     V.goto_setting("about")
     check("the About box shows version, date and credit", V.wait_screen("ABOUT", 5) and V.has("VitaSend  v" + VERSION) and V.has("Version date  2026-") and V.has("Created by trashman"), V.screen())
     check("... and no 'support' line while none is set", "Support" not in V.screen(), V.screen())
+    check("... and a 'Check for updates' button", V.has("Check for updates"), V.screen())
     V.keys("cross")
-    time.sleep(0.3)
-    check("[X] on the About box does nothing", "screen=settings" in V.screen())
+    check("[X] on the About box looks for updates (there is no GitHub here: it fails, with a reason)", V.wait_screen("screen=update", 5) and V.wait_screen("Update check failed", 15), V.screen())
+    V.keys("circle")
+    check("[O] closes the update dialog", V.wait_screen("screen=settings", 5), V.screen())
     V.keys("circle"); V.wait_screen("This device", 5)
 
     # ---- the finished chime: on by default, switchable
@@ -2348,6 +2355,25 @@ def test_shots():
     V.keys("triangle"); expect(V, "screen=move", "copy dialog", 6); snap(V, "move-progress", 0.4)
     expect(V, "Moved 2 items", "move done", 30)
     V.stop(); VITAS.remove(V)
+    # ---- delete with progress, unzip
+    V = new_vita("shots-ops", 53323, {"alias": "Vita-7F3A", "screensaver": 0, "receiveDir": "ux0:data/Backups"},
+                 extra_env={"LS_SLOW_DELETE_MS": "60", "LS_SLOW_UNZIP_MS": "300"})
+    B = "ux0:data/Backups"
+    for d in range(6):
+        os.makedirs(os.path.join(B, "old-saves", f"slot{d}"))
+        for f in range(12): open(os.path.join(B, "old-saves", f"slot{d}", f"save{f}.dat"), "wb").write(b"x" * 400)
+    with zipfile.ZipFile(os.path.join(B, "homebrew-pack.zip"), "w", zipfile.ZIP_STORED) as z:
+        for i in range(8): z.writestr(f"pack/tool{i}.bin", rnd(260000, 70 + i))
+    V.keys("r", "r", "r"); expect(V, "tab=Files screen=files", "files tab (ops)", 6)
+    files_cursor(V, B, "homebrew-pack.zip"); V.keys("cross"); expect(V, "Unzip this file?", "unzip question", 6); snap(V, "unzip-ask", 0.4)
+    V.keys("cross"); expect(V, "Unzipping", "unzip running", 6); time.sleep(1.2); snap(V, "unzip-progress", 0.3)
+    expect(V, "Unzipped", "unzip done", 30)
+    V.keys("cross"); V.wait_screen("screen=files", 5)
+    files_cursor(V, B, "old-saves"); V.keys("select"); expect(V, "Options", "options (delete)", 5)
+    V.menu_pick("Delete old-saves"); expect(V, "Delete?", "delete question", 5); V.keys("cross")
+    expect(V, "screen=delete", "delete running", 5); time.sleep(1.5); snap(V, "delete-progress", 0.3)
+    expect(V, "Deleted 1 item", "delete done", 30)
+    V.stop(); VITAS.remove(V)
     # ---- the viewer: a picture, a text, a queue of several
     from PIL import Image as _I, ImageDraw
     P = "ux0:data/Photos"; os.makedirs(P, exist_ok=True)
@@ -3013,6 +3039,402 @@ def test_view():
     bad = sanitizer_clean([v for v in ALL_VITAS if v.name == "view"])
     check("no sanitizer errors in the viewer tests", not bad, bad)
 
+
+def test_fileops():
+    print("== FILE OPS: deleting with a progress bar (and stopping it), unzipping a zip file (progress, safety, cancel)")
+    recv = os.path.join(ROOT, "fops", "received")
+    os.makedirs(recv)
+    def make_tree(name, dirs=5, files=10):
+        for d in range(dirs):
+            os.makedirs(os.path.join(recv, name, f"d{d}"))
+            for f in range(files): open(os.path.join(recv, name, f"d{d}", f"f{f}.bin"), "wb").write(b"x" * 100)
+    make_tree("tree1"); make_tree("tree2")
+    # ---- zip files
+    good = {"readme.txt": b"hello zip\n" * 30, "docs/a.txt": b"alpha " * 500, "docs/deep/b.bin": rnd(40000, 9), "pic.bin": rnd(3000, 10)}
+    with zipfile.ZipFile(os.path.join(recv, "good.zip"), "w", zipfile.ZIP_DEFLATED) as z:
+        for n, b in good.items(): z.writestr(n, b)
+        z.writestr(zipfile.ZipInfo("emptydir/"), b"")
+    with zipfile.ZipFile(os.path.join(recv, "stored.zip"), "w", zipfile.ZIP_STORED) as z: z.writestr("s.txt", b"stored!")
+    with zipfile.ZipFile(os.path.join(recv, "evil.zip"), "w") as z:
+        z.writestr("ok.txt", b"fine"); z.writestr("../escape.txt", b"owned")
+    with zipfile.ZipFile(os.path.join(recv, "evil2.zip"), "w") as z: z.writestr("/abs.txt", b"owned")
+    with zipfile.ZipFile(os.path.join(recv, "empty.zip"), "w") as z: pass
+    open(os.path.join(recv, "notzip.zip"), "wb").write(rnd(4000, 11))
+    with zipfile.ZipFile(os.path.join(recv, "crc.zip"), "w", zipfile.ZIP_STORED) as z:
+        z.writestr("first.txt", b"first file ok"); z.writestr("second.txt", b"CORRUPT-ME-HERE" * 20)
+    raw = bytearray(open(os.path.join(recv, "crc.zip"), "rb").read()); i = raw.find(b"CORRUPT-ME"); raw[i + 2] ^= 0x55
+    open(os.path.join(recv, "crc.zip"), "wb").write(raw)
+    with zipfile.ZipFile(os.path.join(recv, "big.zip"), "w", zipfile.ZIP_STORED) as z:
+        for i in range(12): z.writestr(f"part{i:02d}.bin", rnd(200000, 30 + i))
+    os.makedirs(os.path.join(recv, "good"))                                   # the name "good" is taken: the result gets "good (1)"
+    open(os.path.join(recv, "good", "mine.txt"), "w").write("keep me")
+    V = Vita("fops", 53830, 53831, config={"alias": "FileOps", "screensaver": 0}, env={"LS_SLOW_DELETE_MS": "40", "LS_SLOW_UNZIP_MS": "60"})
+    VITAS.append(V)
+    V.keys("r", "r", "r")
+    check("Files tab opens", V.wait_screen("tab=Files screen=files", 6) and "tree1/" in V.screen(), V.screen())
+    check("zip files are marked", V.screen().count("ZIP") >= 5, V.screen())
+
+    # ---- delete with progress
+    files_cursor(V, recv, "tree1")
+    V.keys("select"); V.wait_screen("Options", 5)
+    V.menu_pick("Delete tree1")
+    V.wait_screen("Delete?", 5); V.keys("cross")
+    check("deleting shows a progress dialog", V.wait_screen("screen=delete", 5) and V.wait_screen("Deleting", 2), V.screen())
+    check("... that counts files and folders (1 + 5 folders + 50 files = 56)", wait_for(lambda: "of 56 files and folders" in V.screen(), 5), V.screen())
+    check("... names what is going on and offers Stop", "tree1" in V.screen() and "Stop" in V.screen() and V.find_hit("K", 8) is not None, V.screen())
+    seen = []
+    def prog():
+        for l in V.screen().splitlines():
+            if " of 56 files" in l:
+                try: seen.append(int(l.split(" of ")[0].strip().split()[-1]))
+                except Exception: pass
+        return len(set(seen)) >= 3
+    check("the bar really moves", wait_for(prog, 5), seen)
+    check("it finishes: gone, and a message", wait_for(lambda: not os.path.exists(os.path.join(recv, "tree1")), 15) and V.wait_screen("Deleted 1 item", 6) and "screen=files" in V.screen(), os.listdir(recv))
+
+    # ---- stop half way
+    files_cursor(V, recv, "tree2")
+    V.keys("select"); V.wait_screen("Options", 5)
+    V.menu_pick("Delete tree2")
+    V.wait_screen("Delete?", 5); V.keys("cross")
+    V.wait_screen("screen=delete", 5); time.sleep(0.8)
+    V.keys("circle")
+    check("[O] stops it with a message", V.wait_screen("Stopped", 6) and V.wait_screen("screen=files", 5), V.screen())
+    left = sum(len(f) for _, _, f in os.walk(os.path.join(recv, "tree2"))) if os.path.exists(os.path.join(recv, "tree2")) else -1
+    check("... what was deleted stays deleted, the rest stays", 0 < left < 50, left)
+
+    # ---- unzip: ask, progress, result
+    files_cursor(V, recv, "good.zip")
+    check("the hint bar offers X Unzip", "[X]  Unzip" in V.screen(), V.screen())
+    V.keys("cross")
+    check("X on a zip asks first", V.wait_screen("screen=unzip", 5) and V.wait_screen("Unzip this file?", 3), V.screen())
+    scr = V.screen()
+    check("... with the number of files and the new folder's name (taken names get (1))", "4 files" in scr and "good (1)" in scr and "stays as it is" in scr, scr)
+    V.keys("circle")
+    check("[O] cancels: nothing is created", V.wait_screen("screen=files", 5) and not os.path.exists(os.path.join(recv, "good (1)")), os.listdir(recv))
+    V.keys("cross")
+    V.wait_screen("Unzip this file?", 5); V.keys("cross")
+    check("[X] unpacks it and says so", V.wait_screen("Unzipped", 10) and V.wait_screen("good (1)", 2), V.screen())
+    ok = all(open(os.path.join(recv, "good (1)", n), "rb").read() == b for n, b in good.items()) if os.path.isdir(os.path.join(recv, "good (1)")) else False
+    check("every file is intact (also in sub folders)", ok, os.listdir(recv))
+    check("an empty folder inside is kept", os.path.isdir(os.path.join(recv, "good (1)", "emptydir")))
+    check("the existing folder with the same name is untouched", open(os.path.join(recv, "good", "mine.txt")).read() == "keep me")
+    check("the zip itself is still there", os.path.exists(os.path.join(recv, "good.zip")))
+    V.keys("cross")
+    check("[X] 'Show the folder' lands on the new folder", V.wait_screen("screen=files", 5) and wait_for(lambda: any(l.startswith(">") and "good (1)" in l for l in V.screen().splitlines()), 5), V.screen())
+
+    # ---- unzip from the options menu; stored files; plain name
+    files_cursor(V, recv, "stored.zip")
+    V.keys("select"); V.wait_screen("Options", 5)
+    check("the options menu has 'Unzip' for a zip", any(t.startswith("Unzip stored.zip") for t in V.menu_items()), V.menu_items())
+    V.menu_pick("Unzip stored.zip")
+    check("... which asks the same question", V.wait_screen("Unzip this file?", 5) and "Into a new folder: stored" in V.screen(), V.screen())
+    V.keys("cross")
+    check("a stored zip works", V.wait_screen("Unzipped", 10) and open(os.path.join(recv, "stored", "s.txt"), "rb").read() == b"stored!", os.listdir(recv))
+    V.keys("cross"); V.wait_screen("screen=files", 5)
+
+    # ---- unsafe, empty, damaged
+    for name, why, text in (("evil.zip", "unsafe path with ..", "Unsafe file name"), ("evil2.zip", "absolute path", "Unsafe file name"),
+                            ("empty.zip", "empty zip", "empty"), ("notzip.zip", "not a zip at all", None)):
+        files_cursor(V, recv, name); V.keys("cross")
+        okv = V.wait_screen("Cannot unzip this file", 5) and (text is None or text in V.screen())
+        check(f"{why}: refused before anything is written", okv, V.screen())
+        V.keys("cross"); V.wait_screen("screen=files", 5)
+    check("nothing escaped and no folder was left behind", not os.path.exists(os.path.join(ROOT, "fops", "escape.txt")) and not os.path.exists(os.path.join(recv, "evil")) and not os.path.exists(os.path.join(recv, "evil2")), os.listdir(recv))
+    files_cursor(V, recv, "crc.zip"); V.keys("cross")
+    V.wait_screen("Unzip this file?", 5); V.keys("cross")
+    check("a damaged file inside: the error names it", V.wait_screen("second.txt", 10) and V.wait_screen("checksum", 2), V.screen())
+    V.keys("cross"); V.wait_screen("screen=files", 5)
+    check("... and the half-unpacked folder is removed again", not os.path.exists(os.path.join(recv, "crc")), os.listdir(recv))
+
+    # ---- cancel while unpacking
+    files_cursor(V, recv, "big.zip"); V.keys("cross")
+    V.wait_screen("Unzip this file?", 5); V.keys("cross")
+    check("progress is shown while unpacking", V.wait_screen("Unzipping", 5) and wait_for(lambda: "/ 12" in V.screen(), 5), V.screen())
+    time.sleep(0.8)
+    check("... with a percentage", any(l.strip().endswith("%") and l.strip()[0].isdigit() for l in V.screen().splitlines()), V.screen())
+    V.keys("circle")
+    check("[O] cancels", V.wait_screen("Cancelled", 8), V.screen())
+    V.keys("cross"); V.wait_screen("screen=files", 5)
+    check("... and the new folder is removed (all or nothing)", wait_for(lambda: not os.path.exists(os.path.join(recv, "big")), 5), os.listdir(recv))
+
+    check("no sanitizer errors", not sanitizer_clean([V]), sanitizer_clean([V]))
+    V.stop(); VITAS.remove(V)
+
+def test_wifi_grace():
+    print("== WI-FI GRACE: right after waking the Vita, Wi-Fi may need a few seconds - the 'Wi-Fi is turned off' card waits")
+    # ---- Wi-Fi comes up during the grace time: the card never appears
+    f = os.path.join(ROOT, "g1.wifi"); open(f, "w").write("off\n")
+    V = Vita("g1", 53840, 53841, config={"alias": "GraceOne", "screensaver": 0}, env={"LS_WIFI_FILE": f, "LS_WIFI_GRACE_MS": "4000"}, ready=False)
+    VITAS.append(V)
+    check("at first it only says it is waiting", V.wait_screen("Waiting for Wi-Fi", 4), V.screen())
+    time.sleep(1.0)
+    check("... and the question is not shown yet", "Wi-Fi is turned off" not in V.screen(), V.screen())
+    open(f, "w").write("on\n")
+    check("Wi-Fi arrives: VitaSend starts normally", V.wait_screen("This device", 10), V.screen())
+    check("... the card never appeared", "Wi-Fi is turned off" not in V.log() and "Wi-Fi is turned off" not in V.screen())
+    V.stop(); VITAS.remove(V)
+    # ---- it does not come: after the grace time the question appears
+    f = os.path.join(ROOT, "g2.wifi"); open(f, "w").write("off\n")
+    t0 = time.time()
+    V = Vita("g2", 53842, 53843, config={"alias": "GraceTwo", "screensaver": 0}, env={"LS_WIFI_FILE": f, "LS_WIFI_GRACE_MS": "2500"}, ready=False)
+    VITAS.append(V)
+    time.sleep(1.2)
+    check("within the grace time there is no question", "Wi-Fi is turned off" not in V.screen(), V.screen())
+    check("... after it, there is", V.wait_screen("Wi-Fi is turned off", 8), V.screen())
+    check("... not earlier than the grace time", time.time() - t0 >= 2.4, time.time() - t0)
+    V.stop(); VITAS.remove(V)
+
+# =========================================================================== update (a fake GitHub over TLS)
+class FakeGitHub:
+    """An HTTPS server with its own certificate authority: the release list, a redirect to the "CDN", chunked or plain bodies."""
+    def __init__(self, base, port, host_name="localhost"):
+        import http.server
+        self.port = port
+        self.hits = []
+        self.releases = []
+        self.vpk = b""
+        self.sums = b""
+        self.chunked = False
+        self.sums_name = "VitaSend-v0.9.7.vpk"
+        me = self
+        class H(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+            def log_message(self, *a): pass
+            def send_body(self, body, ctype="application/octet-stream", chunked=False):
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Connection", "close")
+                if chunked:
+                    self.send_header("Transfer-Encoding", "chunked"); self.end_headers()
+                    for i in range(0, len(body), 7001):
+                        c = body[i:i + 7001]
+                        self.wfile.write(b"%x\r\n" % len(c) + c + b"\r\n")
+                    self.wfile.write(b"0\r\n\r\n")
+                else:
+                    self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+                self.close_connection = True
+            def do_GET(self):
+                me.hits.append(self.path)
+                if self.path.startswith("/repos/Trashman1111/vitasend/releases"):
+                    self.send_body(json.dumps(me.releases).encode(), "application/json")
+                elif self.path == "/dl/vpk":
+                    self.send_response(302); self.send_header("Location", f"https://localhost:{me.port}/cdn/file.vpk"); self.send_header("Content-Length", "0"); self.send_header("Connection", "close"); self.end_headers()
+                    self.close_connection = True
+                elif self.path == "/cdn/file.vpk":
+                    self.send_body(me.vpk, chunked=me.chunked)
+                elif self.path == "/dl/sums":
+                    self.send_body(me.sums, "text/plain")
+                else:
+                    self.send_response(404); self.send_header("Content-Length", "0"); self.send_header("Connection", "close"); self.end_headers(); self.close_connection = True
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(os.path.join(base, host_name + ".pem"), os.path.join(base, host_name + ".key"))
+        self.srv.socket = ctx.wrap_socket(self.srv.socket, server_side=True)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+    def release(self, tag, pre=False, draft=False, vpk=True, sums=True, digest=None, name=None, size=None):
+        name = name or f"VitaSend-{tag}.vpk"
+        base = f"https://localhost:{self.port}"
+        assets = []
+        if vpk:
+            a = {"name": name, "browser_download_url": base + "/dl/vpk", "size": len(self.vpk) if size is None else size}
+            if digest: a["digest"] = "sha256:" + digest
+            assets.append(a)
+        if sums: assets.append({"name": "SHA256SUMS.txt", "browser_download_url": base + "/dl/sums", "size": 100})
+        return {"tag_name": tag, "name": tag, "draft": draft, "prerelease": pre, "assets": assets}
+    def stop(self):
+        self.srv.shutdown(); self.srv.server_close()
+
+def make_pki(base):
+    os.makedirs(base, exist_ok=True)
+    def run(*a): subprocess.run(a, cwd=base, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "30", "-subj", "/CN=VitaSend Test CA")
+    run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "evil.key", "-out", "evil.pem", "-days", "30", "-subj", "/CN=Other CA")
+    for name in ("localhost", "other.test"):
+        run("openssl", "req", "-newkey", "rsa:2048", "-nodes", "-keyout", name + ".key", "-out", name + ".csr", "-subj", "/CN=" + name)
+        open(os.path.join(base, name + ".ext"), "w").write(f"subjectAltName=DNS:{name}\nbasicConstraints=CA:FALSE\n")
+        run("openssl", "x509", "-req", "-in", name + ".csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-out", name + ".crt", "-days", "30", "-extfile", name + ".ext")
+        open(os.path.join(base, name + ".pem"), "w").write(open(os.path.join(base, name + ".crt")).read() + open(os.path.join(base, "ca.pem")).read())
+
+def test_update():
+    print("== UPDATE: check at start (once a day, switchable), manual check, pre-releases, verified TLS, checksum, install")
+    base = os.path.join(ROOT, "pki")
+    make_pki(base)
+    CA = os.path.join(base, "ca.pem")
+    gh = FakeGitHub(base, 53790)
+    new_vpk = os.path.join(ROOT, "new.vpk")
+    make_vpk(new_vpk, title="VitaSend", tid="LSND00001", ver="00.97")
+    gh.vpk = open(new_vpk, "rb").read()
+    good = sha(gh.vpk)
+    gh.sums = f"{good}  VitaSend-v0.9.7.vpk\n".encode()
+    port = [53800]
+    def vita(name, cfg=None, env=None, date="2026-11-06", delay="300", ca=CA, api=None):
+        port[0] += 2
+        c = {"alias": name, "screensaver": 0}; c.update(cfg or {})
+        e = {"LS_UPDATE_API": api or f"localhost:{gh.port}", "LS_UPDATE_CA": ca, "LS_UPDATE_DELAY_MS": delay, "LS_FAKE_DATE": date}
+        e.update(env or {})
+        V = Vita(name, port[0], port[0] + 1, config=c, env=e)
+        VITAS.append(V)
+        return V
+    def drop(V): V.stop(); VITAS.remove(V)
+    today = 20261106
+
+    # ---- 1. start-up: the newest release counts even when it is a pre-release; drafts do not
+    gh.releases = [gh.release("v0.10.0", draft=True), gh.release("v0.9.9", pre=True), gh.release("v0.9.4")]
+    gh.hits.clear()
+    V = vita("upd1")
+    check("the check at start finds the newest release by itself", V.wait_screen("screen=update", 12) and V.wait_screen("A new version is available", 5), V.screen() + V.log()[-600:])
+    scr = V.screen()
+    check("a pre-release is offered (and labelled), a draft is not", "v0.9.9" in scr and "pre-release" in scr and "v0.10.0" not in scr, scr)
+    check("it shows what is installed and the size", "you have " + VERSION in scr and "MB" in scr, scr)
+    check("the dialog offers Download and install / Not now", "Download and install" in scr and "Not now" in scr, scr)
+    check("the question is remembered for today", wait_for(lambda: V.config().get("updateAskedDay") == today, 5), V.config())
+    V.keys("circle")
+    check("[O] 'Not now' goes back to where we were", wait_for(lambda: "screen=update" not in V.screen(), 5), V.screen())
+    time.sleep(1.0)
+    check("... and the same run does not ask again", "screen=update" not in V.screen(), V.screen())
+    drop(V)
+
+    # ---- 2. restarted on the same day: found again, but no question
+    gh.hits.clear()
+    V = vita("upd2", cfg={"updateAskedDay": today})
+    check("the same day: the check runs", wait_for(lambda: any("/releases" in h for h in gh.hits), 10), gh.hits)
+    check("... and says it quietly in the log", wait_for(lambda: "already asked today" in V.log(), 8), V.log()[-500:])
+    time.sleep(0.8)
+    check("... without a dialog", "screen=update" not in V.screen(), V.screen())
+    # a manual check from the About box does show it, whatever was asked today
+    V.goto_setting("about"); V.keys("cross")
+    check("the manual check (About) still shows it", V.wait_screen("A new version is available", 12), V.screen())
+    V.keys("circle")
+    check("[O] on it returns to Settings", V.wait_screen("screen=settings", 5), V.screen())
+    drop(V)
+
+    # ---- 3. the next day: asked again; the highest number wins (0.10.0 is above 0.9.9)
+    gh.releases = [gh.release("v0.9.9", pre=True), gh.release("v0.10.0", pre=True), gh.release("v0.9.4")]
+    V = vita("upd3", cfg={"updateAskedDay": today}, date="2026-11-07")
+    check("the next day: asked again, and 0.10.0 is above 0.9.9", V.wait_screen("A new version is available", 12) and "v0.10.0" in V.screen(), V.screen())
+    check("... today's date is stored", wait_for(lambda: V.config().get("updateAskedDay") == 20261107, 5), V.config())
+    drop(V)
+
+    # ---- 4. switched off in Settings: nothing is asked of GitHub
+    gh.hits.clear()
+    V = vita("upd4", cfg={"checkUpdates": False})
+    time.sleep(2.5)
+    check("with the check switched off nothing is requested", not gh.hits and "screen=update" not in V.screen(), gh.hits)
+    check("... and the log says so", "check at start is switched off" in V.log(), V.log()[-400:])
+    V.goto_setting("checkupd")
+    wait_for(lambda: "Check for updates at start" in V.screen() and "Off - only when you check" in V.screen(), 6)
+    scr = V.screen()
+    check("the Settings row says Off and what that means", "Check for updates at start" in scr and "Off" in scr and "About" in scr, scr)
+    V.keys("cross")
+    check("[X] switches it on and saves it", wait_for(lambda: V.config().get("checkUpdates") is True, 6) and V.wait_screen("On - looks for a new version", 5), V.config())
+    V.keys("cross")
+    check("[X] again switches it off", wait_for(lambda: V.config().get("checkUpdates") is False, 6), V.config())
+    drop(V)
+
+    # ---- 5. up to date: silent at start, a message from the About box
+    gh.releases = [gh.release("v0.9.7"), gh.release("v0.9.4")]
+    gh.hits.clear()
+    V = vita("upd5")
+    VER_NOW = VERSION
+    gh.releases = [gh.release("v" + VER_NOW), gh.release("v0.9.4")]
+    check("up to date: the start-up check asks GitHub", wait_for(lambda: any("/releases" in h for h in gh.hits), 10), gh.hits)
+    time.sleep(1.0)
+    check("... and stays silent", "screen=update" not in V.screen() and "This device" in V.screen(), V.screen())
+    V.goto_setting("about"); V.keys("cross")
+    check("the manual check says 'up to date'", V.wait_screen("VitaSend is up to date", 12), V.screen())
+    check("... with both versions", "You have version " + VER_NOW in V.screen(), V.screen())
+    V.keys("cross")
+    check("[X] closes it", V.wait_screen("screen=settings", 5), V.screen())
+    drop(V)
+
+    # ---- 6. download (redirect + chunked body), checksum from SHA256SUMS.txt, install over ourselves
+    gh.releases = [gh.release("v0.9.7"), gh.release("v0.9.4")]
+    gh.chunked = True
+    V = vita("upd6")
+    check("v0.9.7 is offered", V.wait_screen("A new version is available", 12) and "v0.9.7" in V.screen() and "pre-release" not in V.screen(), V.screen())
+    V.keys("cross")
+    check("[X] downloads it (through the redirect)", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-800:])
+    check("the downloaded file is kept and checked", wait_for(lambda: os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk")), 3) and sha(open(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk"), "rb").read()) == good)
+    check("the installer says what happens to settings and files", V.has("Your settings and received files stay"), V.screen())
+    V.keys("cross")
+    check("the install runs over the running app", V.wait_screen("VitaSend updated", 20) and V.wait_screen("start it again", 3), V.screen() + V.log()[-600:])
+    check("... and the new files are in place", os.path.isdir(installed_dir(V, "LSND00001")), os.listdir(os.path.join(V.data, "installed")) if os.path.isdir(os.path.join(V.data, "installed")) else "no installed dir")
+    V.keys("square")
+    check("[SQUARE] closes the app so the new version can be started", wait_for(lambda: V.proc.poll() is not None, 8))
+    VITAS.remove(V)
+    gh.chunked = False
+
+    # ---- 7. a wrong checksum is refused and the file deleted
+    gh.sums = f"{'0' * 64}  VitaSend-v0.9.7.vpk\n".encode()
+    V = vita("upd7")
+    V.wait_screen("A new version is available", 12); V.keys("cross")
+    check("a wrong checksum: refused", V.wait_screen("Download failed", 20) and V.wait_screen("checksum does not match", 2), V.screen())
+    check("... nothing stays on the card", not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk")) and not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk.part")))
+    check("... and 'Try again' is offered", "Try again" in V.screen(), V.screen())
+    gh.sums = f"{good}  VitaSend-v0.9.7.vpk\n".encode()
+    V.keys("square")
+    check("[SQUARE] tries the download again (now with the right checksum)", V.wait_screen("Install the new VitaSend?", 20), V.screen())
+    drop(V)
+
+    # ---- 8. no SHA256SUMS.txt: GitHub's own digest is used; none at all: refused
+    gh.releases = [gh.release("v0.9.7", sums=False, digest=good)]
+    V = vita("upd8")
+    V.wait_screen("A new version is available", 12); V.keys("cross")
+    check("without SHA256SUMS.txt the digest GitHub lists is used", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-500:])
+    drop(V)
+    gh.releases = [gh.release("v0.9.7", sums=False)]
+    V = vita("upd9")
+    V.wait_screen("A new version is available", 12); V.keys("cross")
+    check("no checksum anywhere: the download is not trusted", V.wait_screen("Download failed", 15) and V.wait_screen("publishes no checksum", 2), V.screen())
+    drop(V)
+
+    # ---- 9. no .vpk on the release
+    gh.releases = [gh.release("v0.9.7", vpk=False, sums=False)]
+    V = vita("upd10")
+    V.goto_setting("about"); V.keys("cross")
+    check("a release without a package: a clear message", V.wait_screen("Update check failed", 12) and V.wait_screen("no .vpk", 2), V.screen())
+    V.keys("circle")
+    drop(V)
+
+    # ---- 10. certificates are really checked
+    gh.releases = [gh.release("v0.9.7")]
+    V = vita("upd11", ca=os.path.join(base, "evil.pem"))
+    V.goto_setting("about"); V.keys("cross")
+    check("a certificate from an unknown authority is refused", V.wait_screen("Update check failed", 12) and "v0.9.7" not in V.screen(), V.screen())
+    check("... the log says why", wait_for(lambda: "not trusted" in V.log().lower() or "verif" in V.log().lower(), 3), V.log()[-500:])
+    drop(V)
+    gh2 = FakeGitHub(base, 53792, host_name="other.test")
+    gh2.releases = [gh2.release("v0.9.7")]
+    V = vita("upd12", api="localhost:53792")
+    V.goto_setting("about"); V.keys("cross")
+    check("a certificate for another host name is refused", V.wait_screen("Update check failed", 12) and "A new version" not in V.screen(), V.screen())
+    drop(V)
+    gh2.stop()
+
+    # ---- 11. GitHub is down / rate limited
+    V = vita("upd13", api="localhost:53799")
+    V.goto_setting("about"); V.keys("cross")
+    check("nobody there: a message, not a hang", V.wait_screen("Update check failed", 20), V.screen())
+    check("... 'Try again' (SQUARE) is offered", "Try again" in V.screen(), V.screen())
+    drop(V)
+
+    # ---- 12. the automatic question never interrupts a transfer request
+    gh.releases = [gh.release("v0.9.9")]
+    V = vita("upd14", delay="2500")
+    files = [file_entry("id-1", "hello.bin", rnd(2000, 1))]
+    t, box = prepare_async(V.port, files, alias="Banana PC")
+    check("a request arrives first", V.wait_screen("Incoming request", 10), V.screen())
+    time.sleep(4.5)
+    check("the update question waits for it", V.has("Incoming request") and "screen=update" not in V.screen(), V.screen())
+    V.keys("circle"); t.join(10)
+    check("after the request is answered the question comes", V.wait_screen("A new version is available", 10), V.screen())
+    drop(V)
+
+    gh.stop()
+    bad = sanitizer_clean([v for v in ALL_VITAS if v.name.startswith("upd")])
+    check("no sanitizer errors in the update tests", not bad, bad)
+
 # =========================================================================== run
 try:
     if args.only == "shots":
@@ -3034,8 +3456,10 @@ try:
     if args.only in ("", "x11"): test_x11()
     if args.only in ("", "x13"): test_x13()
     if args.only in ("", "move"): test_move()
-    if args.only in ("", "wifi"): test_wifi()
+    if args.only in ("", "wifi"): test_wifi(); test_wifi_grace()
     if args.only in ("", "view"): test_view()
+    if args.only in ("", "update"): test_update()
+    if args.only in ("", "fileops"): test_fileops()
 finally:
     finish_all()
 

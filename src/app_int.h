@@ -10,6 +10,7 @@
  *   app_install.c   installing .vpk packages (one, or a queue)
  *   app_move.c      copying files / folders, and moving them to another memory card (copy, then remove the original)
  *   app_view.c      the picture and text viewer
+ *   app_update.c    the update dialogs (looking for a new version, downloading it)
  *   app_saver.c     the screensaver
  *
  * Author: trashman (VitaSend)
@@ -28,6 +29,7 @@
 #include "settings.h"
 #include "ui.h"
 #include "touch.h"
+#include "update.h"
 #include "util.h"
 #include "vpk.h"
 #include "wifi.h"
@@ -43,7 +45,7 @@
 typedef enum {
     SC_HOME = TAB_RECEIVE, SC_SEND = TAB_SEND, SC_HISTORY = TAB_HISTORY, SC_FILES = TAB_FILES, SC_SETTINGS = TAB_SETTINGS,   /* the tabs */
     SC_BROWSER, SC_OSK, SC_LOG,
-    SC_MESSAGE, SC_REQUEST, SC_TRANSFER, SC_CONFIRM, SC_INSTALL, SC_MENU, SC_PICK, SC_INFO, SC_MOVE, SC_VIEW     /* dialogs on top of a page (SC_VIEW: the picture / text viewer, full screen) */
+    SC_MESSAGE, SC_REQUEST, SC_TRANSFER, SC_CONFIRM, SC_INSTALL, SC_MENU, SC_PICK, SC_INFO, SC_MOVE, SC_VIEW, SC_UPDATE, SC_DELETE, SC_UNZIP     /* dialogs on top of a page (SC_VIEW: the picture / text viewer, full screen) */
 } screen_id;
 
 typedef enum { OP_ALIAS, OP_PIN_SET, OP_SEND_PIN, OP_MESSAGE, OP_ADD_IP, OP_RENAME, OP_NEWDIR } osk_purpose;
@@ -141,6 +143,13 @@ bool view_loading(void);                                /* the screen is about t
 void view_draw(const xfer_status *x);
 void view_input(uint32_t p);
 
+/* ---- app_update.c ---- */
+void upd_ui_open(bool manual, screen_id ret);           /* look for a new version and show the dialog (Settings > About) */
+void upd_ui_tick(uint64_t now);                         /* main loop: the automatic check, today's question, on to the installer */
+void upd_ui_draw(const xfer_status *x);
+void upd_ui_input(uint32_t p);
+bool upd_ui_busy(void);                                 /* checking or downloading right now */
+
 /* ---- app_pages.c ---- */
 extern char s_text_to_send[OSK_MAX + 1];                /* a text message waiting to be sent ("" = none) */
 const char *accept_label(int m);
@@ -188,6 +197,7 @@ void confirm_input(uint32_t p);
 
 /* ---- app_install.c ---- */
 void install_open(const char *path, screen_id ret);
+void install_open_update(const char *path, screen_id ret);   /* the new VitaSend from the update dialog (may replace the running app) */
 void install_draw(const xfer_status *x);
 void install_input(uint32_t p);
 void iq_open(const char *const *paths, int n, screen_id ret, bool autostart);
@@ -204,6 +214,21 @@ bool move_start(const char *dstdir, bool keep_originals);   /* start copying wha
 void move_tick(void);
 void move_draw(const xfer_status *x);
 void move_input(uint32_t p);
+
+/* ---- app_fileops.c: deleting (with progress) and unzipping ---- */
+bool delete_busy(void);
+bool delete_start(char list[][PATH_CAP], int n);        /* start deleting these paths (files, or folders with everything inside) */
+void delete_tick(void);
+void delete_draw(const xfer_status *x);
+void delete_input(uint32_t p);
+bool unzip_ui_busy(void);
+void unzip_ui_open(const char *path, screen_id ret);    /* "Unzip this file?" */
+void unzip_ui_tick(void);
+void unzip_ui_draw(const xfer_status *x);
+void unzip_ui_input(uint32_t p);
+void files_delete_finished(int ok, int bad, const char *first_bad, bool cancelled);   /* app_fileops.c is done: report, reload */
+void files_focus_name(const char *name);                /* reload the listing and put the cursor on an entry */
+bool unique_path(char *path, size_t cap, bool is_dir);  /* "a.bin" -> "a (1).bin" if it exists already */
 
 /* ---- app_saver.c ---- */
 uint32_t idle_unit_ms(void);                            /* 1000 on the Vita; tests shorten it */

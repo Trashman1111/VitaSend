@@ -31,6 +31,16 @@ static unsigned wait_ms(void)
     return WIFI_WAIT_MS;
 }
 
+unsigned wifi_grace_ms(void)
+{
+#ifdef LS_HOST
+    const char *e = getenv("LS_WIFI_GRACE_MS");            /* tests (default: none, so that the question appears at once) */
+    return e && atoi(e) > 0 ? (unsigned)atoi(e) : 0;
+#else
+    return 5000;
+#endif
+}
+
 void wifi_request_on(void)
 {
     if (s_state == WIFI_CONNECTING) return;

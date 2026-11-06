@@ -32,6 +32,7 @@ static void defaults(const char *dir)
     s_set.auto_accept = AUTO_ASK;
     s_set.sound = true;
     s_set.show_battery = true;
+    s_set.check_updates = true;
     s_set.screensaver = 30;
 }
 
@@ -74,6 +75,8 @@ void settings_load(const char *dir)
             double ss = json_num(json_get(j, "screensaver"), 30);
             if (ss >= 0 && ss <= 3600) s_set.screensaver = (int)ss;
             s_set.hide_ids = json_bool(json_get(j, "hideIds"), false);
+            s_set.check_updates = json_bool(json_get(j, "checkUpdates"), true);
+            { double d = json_num(json_get(j, "updateAskedDay"), 0); s_set.update_asked_day = (d >= 20200101 && d <= 29991231) ? (int)d : 0; }
             ls_strlcpy(s_set.wifi_uri, json_str(json_get(j, "wifiSettingsUri"), ""), sizeof s_set.wifi_uri);
             double th = json_num(json_get(j, "theme"), 0);
             s_set.theme = (th >= 1 && th < 2) ? 1 : 0;
@@ -118,6 +121,8 @@ static void save_locked(void)
     jw_kbool(&w, "showClock", s_set.show_clock);
     jw_kint(&w, "screensaver", s_set.screensaver);
     jw_kbool(&w, "hideIds", s_set.hide_ids);
+    jw_kbool(&w, "checkUpdates", s_set.check_updates);
+    jw_kint(&w, "updateAskedDay", s_set.update_asked_day);
     jw_kint(&w, "theme", s_set.theme);
     jw_kstr(&w, "pin", s_set.pin);
     if (s_set.wifi_uri[0]) jw_kstr(&w, "wifiSettingsUri", s_set.wifi_uri);
@@ -249,6 +254,22 @@ void settings_set_hide_ids(bool hide)
 {
     lock();
     s_set.hide_ids = hide;
+    save_locked();
+    unlock();
+}
+
+void settings_set_check_updates(bool on)
+{
+    lock();
+    s_set.check_updates = on;
+    save_locked();
+    unlock();
+}
+
+void settings_set_update_asked_day(int ymd)
+{
+    lock();
+    s_set.update_asked_day = ymd;
     save_locked();
     unlock();
 }

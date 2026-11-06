@@ -14,9 +14,9 @@ void settings_reset(void) { memset(&s_setcur, 0, sizeof s_setcur); }
 
 /* The rows, grouped under headers. */
 enum { ST_NAME, ST_PIN, ST_HIDE,                                  /* This device        */
-       ST_FOLDER, ST_ACCEPT, ST_EXISTS, ST_AUTOINST,              /* Receiving          */
+       ST_FOLDER, ST_ACCEPT, ST_AUTOINST, ST_EXISTS,              /* Receiving          */
        ST_THEME, ST_BATTERY, ST_CLOCK, ST_SAVER, ST_SOUND,        /* Display and sound  */
-       ST_ABOUT, ST_LOG, ST_QUIT,                                 /* About              */
+       ST_ABOUT, ST_CHECKUPD, ST_LOG, ST_QUIT,                    /* About              */
        ST_COUNT };
 
 #define SET_TOP    CONTENT_Y
@@ -91,9 +91,9 @@ void settings_draw(const xfer_status *x)
     settings_snapshot(&st);
     static const char *const label[ST_COUNT] = {
         "Device name", "PIN to send to this device", "Hide IP address and fingerprint",
-        "Save received files in", "Quick Save", "When a received file already exists", "Install received .vpk files",
+        "Save received files in", "Quick Save", "Install received .vpk files", "When a received file already exists",
         "Colours", "Battery indicator", "Clock", "Screensaver", "Sound",
-        "", "Log", "" };
+        "", "Check for updates at start", "Log", "" };
     char value[ST_COUNT][260];
     ls_strlcpy(value[ST_NAME], g_id.alias, sizeof value[0]);
     ls_strlcpy(value[ST_PIN], st.pin[0] ? st.pin : "Off", sizeof value[0]);
@@ -108,6 +108,7 @@ void settings_draw(const xfer_status *x)
     ls_strlcpy(value[ST_SAVER], saver_label(st.screensaver), sizeof value[0]);
     ls_strlcpy(value[ST_SOUND], st.sound ? "On - a short chime when a transfer or an installation has finished" : "Off - silent", sizeof value[0]);
     ls_strlcpy(value[ST_ABOUT], "", sizeof value[0]);
+    ls_strlcpy(value[ST_CHECKUPD], st.check_updates ? "On - looks for a new version on GitHub when VitaSend starts (asks once a day at most)" : "Off - only when you check in the About box", sizeof value[0]);
     ls_strlcpy(value[ST_LOG], "Show what the app has been doing", sizeof value[0]);
     ls_strlcpy(value[ST_QUIT], "Quit VitaSend", sizeof value[0]);
 
@@ -137,6 +138,9 @@ void settings_draw(const xfer_status *x)
             gfx_text(CONTENT_X + 90, y + 47, 14, GW_REG, C_DIM, GA_LEFT, "Version date  " LS_APP_DATE);
             gfx_text(CONTENT_X + 90, y + 67, 14, GW_REG, C_DIM, GA_LEFT, "Created by trashman");
             if (LS_SUPPORT_TEXT[0]) gfx_text_fit(CONTENT_X + 90, y + 91, CONTENT_W - 124, 14, GW_MED, C_ACCENT_HI, GA_LEFT, LS_SUPPORT_TEXT);
+            /* the update button, at the right of the card */
+            int bw = ui_action_width(PB_CROSS, "Check for updates");
+            ui_action(CONTENT_R - 50 - bw, y + 38, PB_CROSS, "Check for updates");
         } else {
             gfx_text(CONTENT_X + 24, y + 13, 12, GW_REG, C_DIM, GA_LEFT, label[i]);
             gfx_text_fit(CONTENT_X + 24, y + 30, CONTENT_W - 92, 16, GW_MED, C_TEXT, GA_LEFT, value[i]);
@@ -151,11 +155,13 @@ void settings_draw(const xfer_status *x)
     char info[200];
     if (s_setcur.sel == ST_ACCEPT || s_setcur.sel == ST_AUTOINST) snprintf(info, sizeof info, "Press X to choose. Quick Save and automatic installation trust the name a sender announces.");
     else if (s_setcur.sel == ST_EXISTS || s_setcur.sel == ST_SAVER) snprintf(info, sizeof info, "Press X to choose from a list.");
+    else if (s_setcur.sel == ST_ABOUT) snprintf(info, sizeof info, "Press X to look for a new version of VitaSend on GitHub now.");
+    else if (s_setcur.sel == ST_CHECKUPD || s_setcur.sel == ST_HIDE) snprintf(info, sizeof info, "Press X to switch.");
     else if (s_setcur.sel == ST_BATTERY || s_setcur.sel == ST_CLOCK) snprintf(info, sizeof info, "Press X to switch. Shown at the top right of every page; the time is the Vita's own clock.");
     else snprintf(info, sizeof info, "Port %u - edit config.json on the memory card to change it.", g_id.port);
     gfx_text_fit(CONTENT_X + 4, CONTENT_B - 8, CONTENT_W - 8, 12, GW_REG, C_FAINT, GA_LEFT, info);
 
-    ui_hints(s_setcur.sel == ST_PIN ? "DUD Move|X Change|SQ Clear PIN|O Back" : "DUD Move|X Change|O Back");
+    ui_hints(s_setcur.sel == ST_PIN ? "DUD Move|X Change|SQ Clear PIN|O Back" : (s_setcur.sel == ST_ABOUT ? "DUD Move|X Check for updates|O Back" : "DUD Move|X Change|O Back"));
 }
 
 enum { PK_ACCEPT, PK_INSTALL, PK_EXISTS, PK_SAVER, PK_COUNT };
@@ -189,6 +195,8 @@ void settings_input(uint32_t p)
             settings_set_sound(!st.sound);
             if (!st.sound) plat_chime();                         /* switched on: let the user hear it */
             break;
+        case ST_ABOUT:    upd_ui_open(true, SC_SETTINGS); break;
+        case ST_CHECKUPD: settings_set_check_updates(!st.check_updates); break;
         case ST_LOG:    go(SC_LOG); break;
         case ST_QUIT:   confirm_open(CF_QUIT, SC_SETTINGS); break;
         }

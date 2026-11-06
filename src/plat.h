@@ -29,6 +29,7 @@ typedef struct {
 void plat_init(void);                        /* Vita: raise the CPU clock to 444 MHz (crypto is CPU heavy) */
 void plat_keep_awake(void);                  /* call every few seconds: stops auto-suspend / screen off */
 void plat_battery(int *percent, bool *charging);   /* percent -1 = unknown */
+bool plat_local_date(int *ymd);                    /* today's date in the Vita's own time zone as YYYYMMDD; false if the clock is not set */
 bool plat_local_clock(int *hour, int *minute);     /* wall-clock time in the Vita's own time zone; false if unknown */
 bool plat_can_launch(void);                 /* this build can open apps (the button is only offered then) */
 bool plat_launch_app(const char *titleid);   /* opens an installed app (and ends this one); false if that is not possible */
@@ -105,6 +106,8 @@ int     plat_udp_sendto(ls_sock s, const void *buf, size_t len, const char *ip, 
 ls_sock plat_tcp_listen(uint16_t port, int backlog);            /* port 0 = any free port */
 uint16_t plat_sock_local_port(ls_sock s);                        /* the port a socket is bound to, 0 if unknown */
 ls_sock plat_tcp_accept(ls_sock listener, ls_endpoint *peer);   /* LS_IO_TIMEOUT if none pending */
+/* Looks a host name up (an address in dotted form is returned as it is). Blocks up to about timeout_ms; false if it fails. */
+bool    plat_resolve(const char *host, char ip[16], int timeout_ms);
 ls_sock plat_tcp_connect(const char *ip, uint16_t port, int timeout_ms);
 void    plat_sock_set_timeout(ls_sock s, int ms);
 int     plat_sock_recv(ls_sock s, void *buf, size_t cap);       /* >0, 0 = peer closed, LS_IO_* */

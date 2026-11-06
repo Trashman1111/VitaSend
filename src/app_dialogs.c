@@ -317,7 +317,7 @@ void confirm_input(uint32_t p)
     if (p & UI_BTN_CROSS) {
         if (s_confirm == CF_SETTING) { pick_apply(); go(SC_SETTINGS); }
         else if (s_confirm == CF_QUIT) { A.quit = true; }
-        else if (s_confirm == CF_DELETE) { do_delete(); go(SC_FILES); }
+        else if (s_confirm == CF_DELETE) { do_delete(); }
         else { xfer_request_cancel(); go(SC_TRANSFER); }
     } else if (p & UI_BTN_CIRCLE) {
         go(s_confirm_return);

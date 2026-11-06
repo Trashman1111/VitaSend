@@ -96,7 +96,7 @@ void draw_tab(int tab, const xfer_status *x)
 
 static void draw_screen(const xfer_status *x)
 {
-    static const char *const names[] = { "receive", "send", "history", "files", "settings", "browser", "keyboard", "log", "message", "request", "transfer", "confirm", "install", "menu", "pick", "info", "move", "view" };
+    static const char *const names[] = { "receive", "send", "history", "files", "settings", "browser", "keyboard", "log", "message", "request", "transfer", "confirm", "install", "menu", "pick", "info", "move", "view", "update", "delete", "unzip" };
     gfx_begin();
     ui_hit_reset();
     ui_set_side_focus(A.side_focus && A.sc <= SC_SETTINGS && !A.saver);
@@ -122,6 +122,9 @@ static void draw_screen(const xfer_status *x)
     case SC_INFO:     info_draw(x); break;
     case SC_MOVE:     move_draw(x); break;
     case SC_VIEW:     view_draw(x); break;
+    case SC_UPDATE:   upd_ui_draw(x); break;
+    case SC_DELETE:   delete_draw(x); break;
+    case SC_UNZIP:    unzip_ui_draw(x); break;
     }
     if (s_toast[0] && plat_time_ms() < s_toast_until) ui_toast(s_toast);
     gfx_end();
@@ -192,6 +195,9 @@ static void handle_input(uint32_t p)
     case SC_INFO:     info_input(p); break;
     case SC_MOVE:     move_input(p); break;
     case SC_VIEW:     view_input(p); break;
+    case SC_UPDATE:   upd_ui_input(p); break;
+    case SC_DELETE:   delete_input(p); break;
+    case SC_UNZIP:    unzip_ui_input(p); break;
     }
 }
 
@@ -262,6 +268,8 @@ static void check_events(void)
     rx_tick();
     iq_tick();
     move_tick();
+    delete_tick();
+    unzip_ui_tick();
 
     /* no new uploads while a package is being installed */
     if (vpk_busy() && request_pending()) rx_decide(false);
@@ -427,12 +435,13 @@ void app_run(const app_opts *opts)
         if (p || touched) dirty = true;
         handle_input(p);
         check_events();
+        upd_ui_tick(now);
 
         /* idle for long enough: start the screensaver (not while a question waits for the user, or while typing) */
         {
             ls_settings ss;
             settings_snapshot(&ss);
-            if (!A.saver && ss.screensaver > 0 && A.sc != SC_REQUEST && A.sc != SC_OSK && A.sc != SC_VIEW && !move_busy() &&
+            if (!A.saver && ss.screensaver > 0 && A.sc != SC_REQUEST && A.sc != SC_OSK && A.sc != SC_VIEW && A.sc != SC_UPDATE && !move_busy() && !delete_busy() && !unzip_ui_busy() &&
                 now > A.last_input && now - A.last_input > (uint64_t)ss.screensaver * idle_unit_ms()) {   /* (the wake-up stamps last_input AFTER `now` was read: never subtract a newer time) */
                 saver_start();
                 dirty = true;
@@ -469,7 +478,7 @@ void app_run(const app_opts *opts)
         }
 
         uint32_t lc = ls_log_counter();
-        bool fast = A.sc == SC_TRANSFER || A.sc == SC_REQUEST || A.sc == SC_INSTALL || A.sc == SC_MOVE || (A.sc == SC_VIEW && view_loading()) || xfer_busy() || wifi_get() == WIFI_CONNECTING;
+        bool fast = A.sc == SC_TRANSFER || A.sc == SC_REQUEST || A.sc == SC_INSTALL || A.sc == SC_MOVE || A.sc == SC_UPDATE || A.sc == SC_DELETE || A.sc == SC_UNZIP || (A.sc == SC_VIEW && view_loading()) || xfer_busy() || wifi_get() == WIFI_CONNECTING;
         if (lc != last_log) { last_log = lc; if (A.sc == SC_LOG || A.sc == SC_HOME) dirty = true; }
         if (A.sc != last_sc) { last_sc = A.sc; dirty = true; }
         if (A.saver != last_saver) { last_saver = A.saver; dirty = true; }

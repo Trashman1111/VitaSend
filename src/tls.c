@@ -6,6 +6,7 @@
  */
 #include "tls.h"
 #include "util.h"
+#include "cacerts.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -248,6 +249,8 @@ typedef struct {
     mbedtls_ssl_config  conf;
     mbedtls_x509_crt    crt;
     mbedtls_pk_context  key;
+    mbedtls_x509_crt    ca;                     /* trusted roots (verified client connections only) */
+    char                verify_why[160];        /* why a verified connection was refused */
 } tls_state;
 
 static void tls_state_free(tls_state *t)
@@ -255,16 +258,75 @@ static void tls_state_free(tls_state *t)
     mbedtls_ssl_free(&t->ssl);
     mbedtls_ssl_config_free(&t->conf);
     mbedtls_x509_crt_free(&t->crt);
+    mbedtls_x509_crt_free(&t->ca);
     mbedtls_pk_free(&t->key);
 }
 
-static bool tls_state_init(tls_state *t, bool server)
+/* The roots a verified connection trusts: the ones built into the program (cacerts.c). The PC test build can use a PEM file
+ * instead (LS_UPDATE_CA), so the tests can run their own certificate authority. */
+static int load_roots(mbedtls_x509_crt *ca)
+{
+#ifdef LS_HOST
+    const char *pemf = getenv("LS_UPDATE_CA");
+    if (pemf && *pemf) {
+        FILE *f = fopen(pemf, "rb");
+        if (!f) return -1;
+        char *buf = malloc(65536);
+        if (!buf) { fclose(f); return -1; }
+        size_t n = fread(buf, 1, 65535, f);
+        fclose(f);
+        buf[n] = 0;
+        int r = mbedtls_x509_crt_parse(ca, (const unsigned char *)buf, n + 1);
+        free(buf);
+        return r < 0 ? r : 0;
+    }
+#endif
+    int ok = 0;
+    for (int i = 0; i < ls_ca_roots_n; i++)
+        if (mbedtls_x509_crt_parse_der(ca, ls_ca_roots[i].der, ls_ca_roots[i].len) == 0) ok++;
+    return ok > 0 ? 0 : -1;
+}
+
+/* how many of the built-in roots can be read (the update check logs it) */
+int tls_roots_usable(void)
+{
+    int ok = 0;
+    for (int i = 0; i < ls_ca_roots_n; i++) {
+        mbedtls_x509_crt c;
+        mbedtls_x509_crt_init(&c);
+        if (mbedtls_x509_crt_parse_der(&c, ls_ca_roots[i].der, ls_ca_roots[i].len) == 0) ok++;
+        mbedtls_x509_crt_free(&c);
+    }
+    return ok;
+}
+
+/* server: our certificate; client: our certificate for the peer, nothing verified (LocalSend trusts by fingerprint);
+ * verify_host != NULL: a client that checks the server's certificate chain against the trusted roots and its name. */
+static bool tls_state_init(tls_state *t, bool server, const char *verify_host)
 {
     int r;
     mbedtls_ssl_init(&t->ssl);
     mbedtls_ssl_config_init(&t->conf);
     mbedtls_x509_crt_init(&t->crt);
+    mbedtls_x509_crt_init(&t->ca);
     mbedtls_pk_init(&t->key);
+
+    if (verify_host) {
+        if ((r = load_roots(&t->ca)) != 0) { ls_log("TLS: the trusted root certificates could not be loaded (%d)", r); goto fail; }
+        if ((r = mbedtls_ssl_config_defaults(&t->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) != 0) {
+            log_mbed("ssl_config_defaults", r);
+            goto fail;
+        }
+        mbedtls_ssl_conf_rng(&t->conf, tls_random, NULL);
+        mbedtls_ssl_conf_min_tls_version(&t->conf, MBEDTLS_SSL_VERSION_TLS1_2);
+        mbedtls_ssl_conf_max_tls_version(&t->conf, MBEDTLS_SSL_VERSION_TLS1_2);
+        /* OPTIONAL: the handshake goes on, and conn_start_tls() refuses the connection afterwards with the reason */
+        mbedtls_ssl_conf_authmode(&t->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+        mbedtls_ssl_conf_ca_chain(&t->conf, &t->ca, NULL);
+        if ((r = mbedtls_ssl_setup(&t->ssl, &t->conf)) != 0) { log_mbed("ssl_setup", r); goto fail; }
+        if ((r = mbedtls_ssl_set_hostname(&t->ssl, verify_host)) != 0) { log_mbed("set_hostname", r); goto fail; }
+        return true;
+    }
 
     if (!s_cert_der || !s_key_der) { ls_log("TLS identity not initialised"); return false; }
     if ((r = mbedtls_x509_crt_parse_der(&t->crt, s_cert_der, s_cert_len)) != 0) { log_mbed("parse cert", r); goto fail; }
@@ -350,17 +412,33 @@ static conn_t *conn_new(ls_sock fd, bool use_tls, int timeout_ms)
     return c;
 }
 
-static conn_t *conn_start_tls(conn_t *c, bool server)
+static conn_t *conn_start_tls(conn_t *c, bool server, const char *verify_host, char *why, size_t whycap)
 {
     c->st = calloc(1, sizeof *c->st);
-    if (!c->st || !tls_state_init(c->st, server)) {
+    if (!c->st || !tls_state_init(c->st, server, verify_host)) {
+        if (why && whycap) ls_strlcpy(why, "TLS could not be set up", whycap);
+        if (c->st) { tls_state_free(c->st); }        /* (init failed half way: every part is initialised, freeing is safe) */
         free(c->st);
         c->st = NULL;
         conn_close(c);
         return NULL;
     }
     plat_sock_set_timeout(c->fd, 1000);               /* short reads while handshaking */
-    if (!handshake(c, server)) {
+    bool good = handshake(c, server);
+    if (good && verify_host) {
+        uint32_t fl = mbedtls_ssl_get_verify_result(&c->st->ssl);
+        if (fl != 0) {
+            char info[160];
+            mbedtls_x509_crt_verify_info(info, sizeof info, "", fl);
+            for (char *q = info; *q; q++) if (*q == '\n') *q = ' ';
+            ls_log("TLS: the certificate of %s is not trusted (0x%X): %s", verify_host, (unsigned)fl, info);
+            if (why && whycap) snprintf(why, whycap, "The certificate of %s is not trusted", verify_host);
+            good = false;
+        }
+    } else if (!good && why && whycap) {
+        ls_strlcpy(why, "The secure connection could not be set up", whycap);
+    }
+    if (!good) {
         tls_state_free(c->st);
         free(c->st);
         c->st = NULL;
@@ -376,7 +454,7 @@ conn_t *conn_accept(ls_sock fd, bool use_tls, int timeout_ms)
     conn_t *c = conn_new(fd, use_tls, timeout_ms);
     if (!c) return NULL;
     plat_sock_set_timeout(fd, timeout_ms);
-    return use_tls ? conn_start_tls(c, true) : c;
+    return use_tls ? conn_start_tls(c, true, NULL, NULL, 0) : c;
 }
 
 conn_t *conn_connect(const char *ip, uint16_t port, bool use_tls, int timeout_ms)
@@ -386,7 +464,18 @@ conn_t *conn_connect(const char *ip, uint16_t port, bool use_tls, int timeout_ms
     conn_t *c = conn_new(fd, use_tls, timeout_ms);
     if (!c) return NULL;
     plat_sock_set_timeout(fd, timeout_ms);
-    return use_tls ? conn_start_tls(c, false) : c;
+    return use_tls ? conn_start_tls(c, false, NULL, NULL, 0) : c;
+}
+
+conn_t *conn_connect_verified(const char *ip, uint16_t port, const char *host, int timeout_ms, char *why, size_t whycap)
+{
+    if (why && whycap) why[0] = 0;
+    ls_sock fd = plat_tcp_connect(ip, port, timeout_ms);
+    if (fd < 0) { if (why && whycap) ls_strlcpy(why, "Could not connect to the server", whycap); return NULL; }
+    conn_t *c = conn_new(fd, true, timeout_ms);
+    if (!c) return NULL;
+    plat_sock_set_timeout(fd, timeout_ms);
+    return conn_start_tls(c, false, host, why, whycap);
 }
 
 void conn_set_timeout(conn_t *c, int ms)
@@ -531,8 +620,8 @@ bool tls_selftest_loopback(double *handshake_ms)
     bool       cli_ok = false, srv_ok = false;
     if (!cli || !srv || !c2s || !s2c) goto done;
 
-    cli_ok = tls_state_init(cli, false);
-    srv_ok = tls_state_init(srv, true);
+    cli_ok = tls_state_init(cli, false, NULL);
+    srv_ok = tls_state_init(srv, true, NULL);
     if (!cli_ok || !srv_ok) goto done;
 
     pipe_end ce = { s2c, c2s }, se = { c2s, s2c };

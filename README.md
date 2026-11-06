@@ -13,7 +13,7 @@ over your own Wi-Fi, no cloud, no cable.** A native homebrew app written in C, w
 [![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 > VitaSend is an independent project. It speaks the open LocalSend protocol but is **not affiliated with** the LocalSend
-> project or Sony. Status: **beta (v0.9.4)** - see [Status](#status).
+> project or Sony. Status: **beta (v0.9.5)** - see [Status](#status).
 
 <table>
   <tr>
@@ -39,6 +39,8 @@ rendered on a PC by the same drawing code the Vita runs.
 * **Receive safely**: you accept or reject every request (or use *Quick Save* for favourites / everyone), optional **PIN**,
   free-space check, SHA-256 verification, existing files kept / skipped / overwritten as you choose.
 * **Files tab**: browse your memory cards, tick several files and send them together, **copy** or **move** them to another folder or memory card, rename, delete, create folders. **X** opens the highlighted file: a **picture** (JPEG, PNG, BMP, GIF) or **text file** in the built-in viewer, a `.vpk` in the installer; tick several with **SQUARE** and **X** opens them as a queue you can page through.
+* **Updates**: VitaSend checks GitHub for a new version when it starts (pre-releases count; asks at most once a day; can be switched off in Settings) and has a **Check for updates** button in *About*. The download is verified (SHA-256, HTTPS with built-in root certificates) and installed with the normal installer.
+* **Unzip** a `.zip` into a new folder (progress bar, cancel, unsafe names refused), and a **progress bar when deleting** files and folders.
 * **Wi-Fi off?** The app asks, tries to switch it on for you, or lets you **continue offline**. Retail firmware has no system call for the first, so then a button (**TRIANGLE**) opens the Vita's Wi-Fi settings.
 * **`.vpk` installer** like VitaShell's: install a received package with one button, install a whole **queue**, or let
   VitaSend install packages from favourites automatically (off by default). *Open app* right after installing.
@@ -53,7 +55,7 @@ rendered on a PC by the same drawing code the Vita runs.
 You need a PS Vita with custom firmware (HENkaku / ensō - see the [Vita Hacks Guide](https://vita.hacks.guide/)) and
 [VitaShell](https://github.com/TheOfficialFloW/VitaShell).
 
-1. Download **`VitaSend-v094.vpk`** from the [Releases](../../releases) page.
+1. Download **`VitaSend-v095.vpk`** from the [Releases](../../releases) page.
 2. Copy it to your Vita (USB or FTP) and install it with VitaShell (open the file, press **X**).
 3. In the HENkaku settings turn on **"Enable unsafe homebrew"** - the installer needs the extended permissions
    (see [why](docs/BUILDING.md#why-the-app-is-unsafe)). Without it the app will not start.
@@ -98,7 +100,7 @@ export VITASDK=/usr/local/vitasdk && export PATH=$VITASDK/bin:$PATH
 mkdir build && cd build && cmake .. && make -j4
 ```
 
-The result is `build/VitaSend-v094.vpk`. Docker, WSL, CMake options and common problems: **[docs/BUILDING.md](docs/BUILDING.md)**.
+The result is `build/VitaSend-v095.vpk`. Docker, WSL, CMake options and common problems: **[docs/BUILDING.md](docs/BUILDING.md)**.
 
 You can also build the whole program as a normal Linux program and test it without a Vita:
 
@@ -136,7 +138,7 @@ docs/       documentation and screenshots
 VitaSend is free software under the **GNU General Public License v3.0 or later** ([LICENSE](LICENSE)). The whole project is
 GPL because the installer follows [VitaShell](https://github.com/TheOfficialFloW/VitaShell) by TheFloW (GPL-3.0): the
 `head.bin` template and the install procedure. Other components: mbedTLS (Apache-2.0 / GPL-2.0+), stb_truetype and stb_image
-(public domain), the Poppins and Liberation Sans fonts (SIL OFL 1.1) - details in
+(public domain), Mozilla's root certificate list (MPL-2.0, built in for the update check), the Poppins and Liberation Sans fonts (SIL OFL 1.1) - details in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The [LocalSend](https://github.com/localsend/localsend) protocol is by Tien Do Nam and contributors. "PlayStation" and

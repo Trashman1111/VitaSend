@@ -28,6 +28,8 @@ typedef struct {
     int      files;
 } vpk_info;
 
+/* The package of VitaSend itself is normally refused (it cannot replace the app that is running). The update dialog allows it. */
+void vpk_allow_self(bool allow);
 bool vpk_has_extension(const char *name);           /* ends in ".vpk" (any case) */
 bool vpk_inspect(const char *path, vpk_info *info); /* reads only a few KiB; fills info->err when it returns false */
 

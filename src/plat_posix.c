@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
@@ -197,6 +198,18 @@ void plat_battery(int *percent, bool *charging)
     const char *e = getenv("LS_FAKE_BATTERY");                 /* test knob; a real PC has no Vita battery */
     *percent = e ? atoi(e) : 100;
     *charging = getenv("LS_FAKE_CHARGING") != NULL;
+}
+
+bool plat_local_date(int *ymd)
+{
+    const char *fake = getenv("LS_FAKE_DATE");                  /* test knob: "YYYY-MM-DD" */
+    int y, m, d;
+    if (fake && sscanf(fake, "%d-%d-%d", &y, &m, &d) == 3) { *ymd = y * 10000 + m * 100 + d; return true; }
+    time_t t = time(NULL);
+    struct tm tmv;
+    if (!localtime_r(&t, &tmv)) return false;
+    *ymd = (tmv.tm_year + 1900) * 10000 + (tmv.tm_mon + 1) * 100 + tmv.tm_mday;
+    return true;
 }
 
 bool plat_local_clock(int *hour, int *minute)
@@ -481,6 +494,20 @@ void plat_sock_set_timeout(ls_sock s, int ms)
     struct timeval tv = { ms / 1000, (ms % 1000) * 1000 };
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
     setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+}
+
+bool plat_resolve(const char *host, char ip[16], int timeout_ms)
+{
+    (void)timeout_ms;
+    struct in_addr a;
+    if (inet_pton(AF_INET, host, &a) == 1) { snprintf(ip, 16, "%s", host); return true; }
+    struct addrinfo hints = { 0 }, *res = NULL;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) return false;
+    bool ok = inet_ntop(AF_INET, &((struct sockaddr_in *)res->ai_addr)->sin_addr, ip, 16) != NULL;
+    freeaddrinfo(res);
+    return ok;
 }
 
 ls_sock plat_tcp_connect(const char *ip, uint16_t port, int timeout_ms)

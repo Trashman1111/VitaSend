@@ -99,6 +99,21 @@ static void chime_thread(void *arg)
     s_chime_busy = 0;
 }
 
+bool plat_local_date(int *ymd)
+{
+#ifdef LS_HAVE_RTC
+    SceDateTime dt;
+    if (sceRtcGetCurrentClockLocalTime(&dt) == 0 && dt.year >= 2024) { *ymd = dt.year * 10000 + dt.month * 100 + dt.day; return true; }
+    return false;
+#else
+    time_t t = time(NULL);
+    struct tm tmv;
+    if (t < 1700000000 || !gmtime_r(&t, &tmv)) return false;
+    *ymd = (tmv.tm_year + 1900) * 10000 + (tmv.tm_mon + 1) * 100 + tmv.tm_mday;
+    return true;
+#endif
+}
+
 bool plat_local_clock(int *hour, int *minute)
 {
 #ifdef LS_HAVE_RTC
@@ -682,6 +697,19 @@ ls_sock plat_tcp_accept(ls_sock listener, ls_endpoint *peer)
         peer->port = sceNetNtohs(a.sin_port);
     }
     return c;
+}
+
+bool plat_resolve(const char *host, char ip[16], int timeout_ms)
+{
+    SceNetInAddr a;
+    memset(&a, 0, sizeof a);
+    if (sceNetInetPton(SCE_NET_AF_INET, host, &a) == 1) { ls_strlcpy(ip, host, 16); return true; }
+    int rid = sceNetResolverCreate("ls_dns", NULL, 0);
+    if (rid < 0) { note_err("resolver", rid); return false; }
+    int r = sceNetResolverStartNtoa(rid, host, &a, timeout_ms > 0 ? timeout_ms * 1000 : 5000000, 2, 0);
+    sceNetResolverDestroy(rid);
+    if (r < 0) { note_err("resolve", r); ls_log("DNS: %s could not be resolved (0x%08X)", host, (unsigned)r); return false; }
+    return sceNetInetNtop(SCE_NET_AF_INET, &a, ip, 16) != NULL;
 }
 
 ls_sock plat_tcp_connect(const char *ip, uint16_t port, int timeout_ms)

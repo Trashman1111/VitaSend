@@ -5,6 +5,27 @@ All notable changes to VitaSend. The format follows [Keep a Changelog](https://k
 
 How the project got here, step by step, is in [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md).
 
+## [0.9.5] - 2026-11-06
+
+### Added
+- **Update check and self-update** (`src/update.c`, `src/app_update.c`). A few seconds after the network is there, VitaSend asks GitHub (`Trashman1111/vitasend`) for the newest release. **Pre-releases count**; drafts do not; the highest version number wins. A new version is offered in a window (**X Download and install / O Not now**) **at most once a day** (the day is stored in `config.json` as `updateAskedDay`) and **never in the middle of something**: not during a transfer, a request, an installation, a copy / delete / unzip, a dialog, or the screensaver. If nothing newer exists nothing is shown.
+- **Settings > Display ... > Check for updates at start** (On by default; **X** switches it). Off = GitHub is only asked when you press the button below.
+- **Settings > About > Check for updates** (button, or **X** on the About box): a manual check that always answers - *VitaSend is up to date*, the new version, or why it failed (with **SQUARE = Try again**).
+- **The download is checked.** The file must match the SHA-256 in the release's `SHA256SUMS.txt` (or, if there is none, the digest GitHub lists for the file); a release without any checksum is refused. The package then goes through the normal installer (`Install the new VitaSend?`); afterwards **SQUARE closes VitaSend** so you can start the new version. A downloaded file is kept in `ux0:data/VitaSend/update/` (install it with VitaShell if the in-app install ever fails).
+- **Verified HTTPS.** The update connection checks the server's certificate chain and host name against **25 root certificates built into the program** (Mozilla's list, `src/cacerts.c`, made by `tools/gen_cacerts.py`; MPL-2.0 data, see THIRD_PARTY_NOTICES). The mbedTLS build has no clock, so certificate **dates are not checked** (a stolen, expired certificate would still be accepted; the SHA-256 check of the download is independent of that).
+- **Deleting shows a progress bar.** Deleting files and folders runs in a dialog that counts files and folders and moves like the copy dialog does; **O = Stop** (what is already deleted stays deleted).
+- **Unzip.** **X** on a `.zip` file in the Files tab (or *Unzip ...* in the SELECT menu) asks *Unzip this file?* (number of files, size, the new folder's name), unpacks it into a **new folder next to the file** named like it (an existing name gets "(1)"), with a progress bar and **O = Cancel**. Stored and deflated files only (no passwords, no ZIP64); names with `..`, absolute paths or too-deep nesting are refused **before anything is written**; a damaged file or a full card removes the new folder again (all or nothing). The zip file stays.
+
+### Changed
+- **After waking the Vita, VitaSend waits up to 5 seconds for Wi-Fi** ("Waiting for Wi-Fi...") before showing the *Wi-Fi is turned off* window, because the Vita needs a moment to bring Wi-Fi up after sleep. (At start only; the *No Wi-Fi* card on the Receive page after a connection is lost is unchanged.)
+- **Settings order**: *Install received .vpk files* now sits directly under *Quick Save*; *When a received file already exists* follows.
+
+### Notes
+- The in-app self-update is new and was tested on the PC build only (a fake GitHub with its own certificate authority). If the install over the running app does not work on your Vita, the log (`Update: ...`) says where it stopped and the downloaded package is in `ux0:data/VitaSend/update/`.
+
+### Tested
+- New automated tests: `--only update` (47 checks: start-up check, pre-releases, drafts, 0.10.0 above 0.9.9, once-a-day rule, switch, manual check, redirect + chunked download, checksum from the sums file / from the digest / missing / wrong, unknown authority, wrong host name, server down, never interrupting a request) and `--only fileops` (34 checks: delete progress and stopping, unzip with progress, safety, damaged files, cancel); Wi-Fi start delay (`--only wifi`); settings order (`--only polish`).
+
 ## [0.9.4] - 2026-11-06
 
 ### Fixed
