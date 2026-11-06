@@ -137,7 +137,7 @@ class Vita:
                "--seconds", str(seconds), "--dump-screen", self.screen_file, "--keys-fifo", self.fifo]
         if browse: cmd += ["--browse-start", browse]
         if extra: cmd += extra
-        env = dict(os.environ, LS_KEY_MS="60", ASAN_OPTIONS="detect_leaks=0", **(env or {}))
+        env = dict(dict(os.environ, LS_KEY_MS="60", ASAN_OPTIONS="detect_leaks=0", LS_UPDATE_API="localhost:1"), **(env or {}))   # (never the real GitHub: a dead port unless a test sets its own)
         self.proc = subprocess.Popen(cmd, stdout=open(self.log_path, "w"), stderr=subprocess.STDOUT, env=env)
         ALL_VITAS.append(self)
         atexit.register(lambda: self.proc.poll() is None and self.proc.kill())
