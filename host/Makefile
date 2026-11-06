@@ -11,7 +11,7 @@ MBED  ?= $(ROOT)/deps/mbedtls-host
 SRC   := $(ROOT)/src
 OUT   := $(ROOT)/host/localsend-host
 
-SOURCES := main util json tls identity settings history xfer peers http api rx send discovery gfx gfx_icons fontdata ui app app_files app_pages app_settings app_dialogs app_install app_saver inflate zip headbin vpk plat_posix touch ui_host
+SOURCES := main util json tls identity settings history xfer peers http api rx send discovery gfx gfx_icons fontdata ui app app_files app_pages app_settings app_dialogs app_install app_move app_view wifi app_saver inflate zip headbin vpk plat_posix touch ui_host
 
 CC      ?= gcc
 CFLAGS  := -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -DLS_HOST -I$(SRC) -I$(MBED)/include

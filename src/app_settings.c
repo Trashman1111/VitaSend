@@ -155,7 +155,7 @@ void settings_draw(const xfer_status *x)
     else snprintf(info, sizeof info, "Port %u - edit config.json on the memory card to change it.", g_id.port);
     gfx_text_fit(CONTENT_X + 4, CONTENT_B - 8, CONTENT_W - 8, 12, GW_REG, C_FAINT, GA_LEFT, info);
 
-    ui_hints(s_setcur.sel == ST_PIN ? "DUD Move|X Change|SQ Clear PIN|LR Tabs|O Back" : "DUD Move|X Change|LR Tabs|O Back");
+    ui_hints(s_setcur.sel == ST_PIN ? "DUD Move|X Change|SQ Clear PIN|O Back" : "DUD Move|X Change|O Back");
 }
 
 enum { PK_ACCEPT, PK_INSTALL, PK_EXISTS, PK_SAVER, PK_COUNT };

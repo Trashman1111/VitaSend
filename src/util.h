@@ -12,8 +12,8 @@
 
 #define LS_APP_NAME      "VitaSend"
 #define LS_APP_AUTHOR    "trashman"
-#define LS_APP_VERSION   "0.9.0"
-#define LS_APP_DATE      "2026-10-29"       /* release date, shown in Settings > About */
+#define LS_APP_VERSION   "0.9.4"
+#define LS_APP_DATE      "2026-11-06"       /* release date, shown in Settings > About */
 /* A line under the credit in Settings > About - the place for "support the developer" information. Empty = not shown.
  * (Build with -DLS_SUPPORT_TEXT='"..."' to try one without editing this file.) */
 #ifndef LS_SUPPORT_TEXT

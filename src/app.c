@@ -96,7 +96,7 @@ void draw_tab(int tab, const xfer_status *x)
 
 static void draw_screen(const xfer_status *x)
 {
-    static const char *const names[] = { "receive", "send", "history", "files", "settings", "browser", "keyboard", "log", "message", "request", "transfer", "confirm", "install", "menu", "pick", "info" };
+    static const char *const names[] = { "receive", "send", "history", "files", "settings", "browser", "keyboard", "log", "message", "request", "transfer", "confirm", "install", "menu", "pick", "info", "move", "view" };
     gfx_begin();
     ui_hit_reset();
     ui_set_side_focus(A.side_focus && A.sc <= SC_SETTINGS && !A.saver);
@@ -120,6 +120,8 @@ static void draw_screen(const xfer_status *x)
     case SC_MENU:     menu_draw(x); break;
     case SC_PICK:     pick_draw(x); break;
     case SC_INFO:     info_draw(x); break;
+    case SC_MOVE:     move_draw(x); break;
+    case SC_VIEW:     view_draw(x); break;
     }
     if (s_toast[0] && plat_time_ms() < s_toast_until) ui_toast(s_toast);
     gfx_end();
@@ -156,6 +158,7 @@ static void handle_tab_keys(uint32_t p)
     if (A.side_focus) {                                  /* D-pad test: the tab list has the focus */
         if (p & UI_BTN_UP)   tab_changed((A.tab + TAB_COUNT - 1) % TAB_COUNT);
         if (p & UI_BTN_DOWN) tab_changed((A.tab + 1) % TAB_COUNT);
+        if ((p & UI_BTN_TRIANGLE) && !A.ip[0]) wifi_user_action();     /* (the hint bar offers it) */
         if (p & (UI_BTN_RIGHT | UI_BTN_CROSS | UI_BTN_CIRCLE)) A.side_focus = false;
         return;
     }
@@ -187,6 +190,8 @@ static void handle_input(uint32_t p)
     case SC_MENU:     menu_input(p); break;
     case SC_PICK:     pick_input(p); break;
     case SC_INFO:     info_input(p); break;
+    case SC_MOVE:     move_input(p); break;
+    case SC_VIEW:     view_input(p); break;
     }
 }
 
@@ -256,6 +261,7 @@ static void check_events(void)
 {
     rx_tick();
     iq_tick();
+    move_tick();
 
     /* no new uploads while a package is being installed */
     if (vpk_busy() && request_pending()) rx_decide(false);
@@ -384,6 +390,7 @@ void app_run(const app_opts *opts)
     A.ret = SC_HOME;
     A.side_focus = true;                            /* the first page has nothing the D-pad could steer: start in the tab list */
     A.server_ok = opts->server_ok;
+    bool services_pending = opts->start_services != NULL;     /* "Continue without Wi-Fi": the server waits for the network */
     {
         ls_settings st0;
         settings_snapshot(&st0);
@@ -425,7 +432,7 @@ void app_run(const app_opts *opts)
         {
             ls_settings ss;
             settings_snapshot(&ss);
-            if (!A.saver && ss.screensaver > 0 && A.sc != SC_REQUEST && A.sc != SC_OSK &&
+            if (!A.saver && ss.screensaver > 0 && A.sc != SC_REQUEST && A.sc != SC_OSK && A.sc != SC_VIEW && !move_busy() &&
                 now > A.last_input && now - A.last_input > (uint64_t)ss.screensaver * idle_unit_ms()) {   /* (the wake-up stamps last_input AFTER `now` was read: never subtract a newer time) */
                 saver_start();
                 dirty = true;
@@ -434,15 +441,21 @@ void app_run(const app_opts *opts)
         }
         if (A.saver) saver_step();
 
-        if (now - t_net > 2000) {                                 /* Wi-Fi came / went / changed address? */
+        if (now - t_net > (wifi_get() == WIFI_CONNECTING ? 500u : 2000u)) {   /* Wi-Fi came / went / changed address? */
             t_net = now;
             char cur[16] = "";
             plat_net_local_ip(cur);
+            if (wifi_poll(cur[0] != 0)) dirty = true;
             if (strcmp(cur, A.ip) != 0) {
                 ls_strlcpy(A.ip, cur, sizeof A.ip);
                 if (cur[0]) {
                     ls_log("Wi-Fi address is now %s", cur);
-                    discovery_network_changed();
+                    if (services_pending) {
+                        services_pending = false;
+                        A.server_ok = opts->start_services();
+                    } else {
+                        discovery_network_changed();
+                    }
                 } else {
                     ls_log("Wi-Fi lost");
                 }
@@ -456,7 +469,7 @@ void app_run(const app_opts *opts)
         }
 
         uint32_t lc = ls_log_counter();
-        bool fast = A.sc == SC_TRANSFER || A.sc == SC_REQUEST || A.sc == SC_INSTALL || xfer_busy();
+        bool fast = A.sc == SC_TRANSFER || A.sc == SC_REQUEST || A.sc == SC_INSTALL || A.sc == SC_MOVE || (A.sc == SC_VIEW && view_loading()) || xfer_busy() || wifi_get() == WIFI_CONNECTING;
         if (lc != last_log) { last_log = lc; if (A.sc == SC_LOG || A.sc == SC_HOME) dirty = true; }
         if (A.sc != last_sc) { last_sc = A.sc; dirty = true; }
         if (A.saver != last_saver) { last_saver = A.saver; dirty = true; }

@@ -273,9 +273,9 @@ static void iq_draw(const xfer_status *x)
     if (s_iq_phase == IQ_ASK) {
         gfx_circle((float)(lx + 28), (float)(dy + 52), 28, C_ACCENT_BG);
         gfx_icon(IC_PACKAGE, (float)(lx + 28), (float)(dy + 52), 30, C_ACCENT_HI);
-        snprintf(line, sizeof line, "Install these %d apps?", s_iq_n);
-        gfx_text(lx + 72, dy + 40, 22, GW_BOLD, C_TEXT, GA_LEFT, line);
-        gfx_text_fit(lx + 72, dy + 68, w - 72, 15, GW_REG, C_DIM, GA_LEFT, "One after another - you only need to confirm once.");
+        gfx_text(lx + 72, dy + 40, 22, GW_BOLD, C_TEXT, GA_LEFT, "Install these apps?");
+        snprintf(line, sizeof line, "%d packages, one after another - you only need to confirm once.", s_iq_n);
+        gfx_text_fit(lx + 72, dy + 68, w - 72, 15, GW_REG, C_DIM, GA_LEFT, line);
         int shown = s_iq_n > 6 ? 5 : s_iq_n, unsafe = 0;
         for (int i = 0; i < s_iq_n; i++) if (s_iq[i].info.unsafe) unsafe++;
         for (int i = 0; i < shown; i++) {

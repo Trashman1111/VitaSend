@@ -60,14 +60,23 @@ void receive_draw(const xfer_status *x)
     gcol chip_col = C_GOOD;
     char status[200] = "";
     gcol status_col = C_DIM;
+    bool wifi_btn = false, wifi_spin = false;
+    const char *wifi_btn_label = "Turn on Wi-Fi";
     if (!A.server_ok) {
         chip = "Server error"; chip_col = C_BAD;
         snprintf(status, sizeof status, "Server not running: %s", plat_net_error_text());
         status_col = C_BAD;
     } else if (!A.ip[0]) {
-        chip = "No Wi-Fi"; chip_col = C_WARN;
-        snprintf(status, sizeof status, "Wi-Fi not connected");
+        /* no popup: the card itself says it, and offers the switch (the same one as the start-up question) */
+        wifi_state ws = wifi_get();
+        chip = ws == WIFI_CONNECTING ? "Connecting" : "No Wi-Fi";
+        chip_col = C_WARN;
+        snprintf(status, sizeof status, "%s", ws == WIFI_CONNECTING ? "Turning on Wi-Fi..." :
+                 (ws == WIFI_FAILED ? "Not possible here - use Settings > Network" : "Wi-Fi not connected"));
         status_col = C_WARN;
+        wifi_btn = ws != WIFI_CONNECTING;
+        wifi_btn_label = ws == WIFI_FAILED ? "Wi-Fi settings" : "Turn on Wi-Fi";
+        wifi_spin = ws == WIFI_CONNECTING;
     } else {
         if (xfer_running(x)) { chip = x->outgoing ? "Sending" : "Receiving"; chip_col = C_ACCENT_HI; }
         if (hide_ids) snprintf(status, sizeof status, "Address hidden \xC2\xB7 %s", g_id.https ? "https" : "http");
@@ -79,7 +88,16 @@ void receive_draw(const xfer_status *x)
     char sub[100];
     snprintf(sub, sizeof sub, "%s \xC2\xB7 %s", g_id.device_model, g_id.device_type);
     gfx_text_fit(tx, CONTENT_Y + 80, avail, 15, GW_REG, C_DIM, GA_LEFT, sub);
-    gfx_text_fit(tx, CONTENT_Y + 102, avail, 15, GW_MED, status_col, GA_LEFT, status);
+    int sw = avail;
+    if (wifi_btn) {
+        int bw = ui_action_width(PB_TRIANGLE, wifi_btn_label);
+        ui_action(CONTENT_R - 22 - bw, CONTENT_Y + 102, PB_TRIANGLE, wifi_btn_label);
+        sw = avail - bw - 12;
+    } else if (wifi_spin) {
+        ui_spinner(CONTENT_R - 22 - 14, CONTENT_Y + 102, 10, (unsigned)plat_time_ms(), C_WARN);
+        sw = avail - 40;
+    }
+    gfx_text_fit(tx, CONTENT_Y + 102, sw, 15, GW_MED, status_col, GA_LEFT, status);
     gfx_text(lx, CONTENT_Y + 132, 13, GW_REG, C_FAINT, GA_LEFT, "Fingerprint");
     /* (the fingerprint is cut short when the "Press X for details" hint needs the room) */
     gfx_text_fit(lx + 92, CONTENT_Y + 132, CONTENT_R - 24 - (lx + 92) - (dev_focus ? 132 : 0), 13, GW_REG, C_DIM, GA_LEFT,
@@ -114,14 +132,18 @@ void receive_draw(const xfer_status *x)
         gfx_text_fit(lx + 36, cy, CONTENT_W - 100 - wt, 15, GW_REG, h.status == H_OK ? C_TEXT : col, GA_LEFT, what);
     }
 
-    ui_hints(xfer_running(x) ? "X Device info|TRI Announce|START Transfer|LR Tabs|O Quit"
-                             : "X Device info|TRI Announce|LR Tabs|O Quit");
+    if (!A.ip[0]) ui_hints(wifi_get() == WIFI_CONNECTING ? "X Device info|LR Tabs|O Quit" : (wifi_get() == WIFI_FAILED ? "X Device info|TRI Wi-Fi settings|LR Tabs|O Quit" : "X Device info|TRI Turn on Wi-Fi|LR Tabs|O Quit"));
+    else ui_hints(xfer_running(x) ? "X Device info|TRI Announce|START Transfer|LR Tabs|O Quit"
+                                  : "X Device info|TRI Announce|LR Tabs|O Quit");
 }
 
 void receive_input(uint32_t p)
 {
     if (p & UI_BTN_CROSS) { go(SC_INFO); return; }
-    if (p & UI_BTN_TRIANGLE) { discovery_request_announce(); toast("Announcing..."); }
+    if (p & UI_BTN_TRIANGLE) {
+        if (!A.ip[0]) wifi_user_action();                 /* without Wi-Fi there is nobody to announce to: switch it on instead */
+        else { discovery_request_announce(); toast("Announcing..."); }
+    }
     if (p & UI_BTN_CIRCLE) confirm_open(CF_QUIT, SC_HOME);
 }
 
@@ -285,8 +307,8 @@ void send_draw(const xfer_status *x)
         ui_hit_scroll(CONTENT_X, PEER_TOP, CONTENT_W, PEER_ROWS * PEER_STEP, &s_pcur.top, &s_pcur.sel, n, PEER_ROWS, PEER_STEP);
     }
 
-    ui_hints(xfer_running(x) ? "X Send|SQ Files|TRI Text|SEL Add by IP|START Transfer|LR Tabs"
-                             : "X Send|SQ Files|TRI Text|SEL Add by IP|START Favorite|LR Tabs");
+    ui_hints(xfer_running(x) ? "X Send|SQ Files|TRI Text|SEL Add by IP|START Transfer"
+                             : "X Send|SQ Files|TRI Text|SEL Add by IP|START Favorite");
 }
 
 static void send_to_peer(const ls_peer *peer)
@@ -380,8 +402,8 @@ void history_draw(const xfer_status *x)
         ui_scrollbar(CONTENT_R - 6, HIST_TOP, HIST_ROWS * HIST_STEP - 6, s_hcur.top, HIST_ROWS, n);
         ui_hit_scroll(CONTENT_X, HIST_TOP, CONTENT_W, HIST_ROWS * HIST_STEP, &s_hcur.top, &s_hcur.sel, n, HIST_ROWS, HIST_STEP);
     }
-    ui_hints(xfer_running(x) ? "DUD Move|X Read message|START Transfer|LR Tabs|O Back"
-                             : "DUD Move|X Read message|LR Tabs|O Back");
+    ui_hints(xfer_running(x) ? "DUD Move|X Read message|START Transfer|O Back"
+                             : "DUD Move|X Read message|O Back");
 }
 
 void history_input(uint32_t p)

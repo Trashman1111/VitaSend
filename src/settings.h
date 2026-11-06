@@ -9,6 +9,7 @@
 #define LS_SETTINGS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define SET_MAX_FAVS   16
@@ -34,6 +35,7 @@ typedef struct {
     int      theme;                      /* THEME_DARK / THEME_OLED (see ui.h) */
     bool     hide_ids;                   /* hide this device's IP address and fingerprint on screen */
     char     pin[SET_PIN_MAX + 1];       /* "" = no PIN required to send to us */
+    char     wifi_uri[96];               /* config.json only ("wifiSettingsUri"): the system page the Wi-Fi settings button opens; "" = built-in default */
     int      nfavs;
     struct { char fp[65]; char alias[64]; } favs[SET_MAX_FAVS];
 } ls_settings;
@@ -55,6 +57,7 @@ void settings_set_show_clock(bool on);
 void settings_set_screensaver(int seconds);
 void settings_set_hide_ids(bool hide);
 void settings_set_theme(int theme);
+void settings_wifi_uri(char *out, size_t cap);     /* the configured address of the Wi-Fi settings page ("" = default) */
 void settings_set_pin(const char *pin);             /* digits only, "" clears */
 
 bool settings_is_fav(const char *fingerprint);

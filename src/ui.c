@@ -6,7 +6,9 @@
  */
 #include "ui.h"
 #include "util.h"
+#include "wifi.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -231,7 +233,16 @@ int ui_theme_id(void) { return s_theme_id; }
 const char *ui_theme_name(int theme) { return theme == THEME_OLED ? "OLED" : "Dark"; }
 
 static bool s_side_focus;
+static int  s_cur_tab;                                         /* the tab that is showing (the "L R Tabs" hint is only shown on Receive) */
+static bool s_offer_wifi;                                      /* no Wi-Fi and not already switching it on: Triangle switches it on */
 void ui_set_side_focus(bool on) { s_side_focus = on; }
+
+static void wifi_tap_thunk(void *ctx, int arg)
+{
+    (void)ctx;
+    (void)arg;
+    wifi_user_action();
+}
 
 void ui_draw_chrome(int tab, const ui_side_info *info)
 {
@@ -262,8 +273,17 @@ void ui_draw_chrome(int tab, const ui_side_info *info)
     }
 
     int base = HINT_Y - 18;
-    gfx_icon(IC_WIFI, 30, (float)(base - 4), 18, info && info->ip && info->ip[0] ? C_GOOD : C_WARN);
-    gfx_text_fit(48, base, SIDEBAR_W - 60, 14, GW_REG, C_DIM, GA_LEFT, info && info->ip && info->ip[0] ? info->ip : "No Wi-Fi");
+    s_cur_tab = tab;
+    s_offer_wifi = !(info && info->ip && info->ip[0]) && wifi_get() != WIFI_CONNECTING;
+    if (info && info->ip && info->ip[0]) {
+        gfx_icon(IC_WIFI, 30, (float)(base - 4), 18, C_GOOD);
+        gfx_text_fit(48, base, SIDEBAR_W - 60, 14, GW_REG, C_DIM, GA_LEFT, info->ip);
+    } else {                                                   /* no Wi-Fi: the row is a button that switches it on */
+        bool busy = wifi_get() == WIFI_CONNECTING;
+        gfx_icon(busy ? IC_WIFI : IC_WIFI_OFF, 30, (float)(base - 4), 18, C_WARN);
+        gfx_text_fit(48, base, SIDEBAR_W - 60, 14, GW_REG, C_WARN, GA_LEFT, busy ? "Connecting..." : "No Wi-Fi");
+        if (!busy) ui_hit_call(8, base - 22, SIDEBAR_W - 16, 38, wifi_tap_thunk, NULL, 0);
+    }
     gfx_text(20, base - 28, 12, GW_REG, C_FAINT, GA_LEFT, "v" LS_APP_VERSION " by trashman");
 
     if (info && info->xfer_title) {
@@ -316,7 +336,12 @@ void ui_page_title(const char *title, const char *right)
 
 void ui_hints(const char *spec)
 {
-    if (s_side_focus) spec = "DUD Switch tab|X Back to page|LR Tabs";
+    if (s_side_focus) {
+        bool lr = s_cur_tab == TAB_RECEIVE;
+        if (s_offer_wifi) spec = wifi_get() == WIFI_FAILED ? (lr ? "DUD Switch tab|X Back to page|TRI Wi-Fi settings|LR Tabs" : "DUD Switch tab|X Back to page|TRI Wi-Fi settings")
+                                                           : (lr ? "DUD Switch tab|X Back to page|TRI Turn on Wi-Fi|LR Tabs" : "DUD Switch tab|X Back to page|TRI Turn on Wi-Fi");
+        else spec = lr ? "DUD Switch tab|X Back to page|LR Tabs" : "DUD Switch tab|X Back to page";
+    }
     static const struct { const char *code; int a, b; } map[] = {
         { "X", PB_CROSS, -1 }, { "O", PB_CIRCLE, -1 }, { "SQ", PB_SQUARE, -1 }, { "TRI", PB_TRIANGLE, -1 },
         { "L", PB_L, -1 }, { "R", PB_R, -1 }, { "LR", PB_L, PB_R }, { "START", PB_START, -1 }, { "SEL", PB_SELECT, -1 },
@@ -476,9 +501,8 @@ void ui_device_icon(const char *type, const char *model, float cx, float cy, flo
     gfx_icon(ic, cx, cy, size, c);
 }
 
-void ui_boot_screen(const char *status, gcol status_color, const char *footer)
+static void boot_body(const char *status, gcol status_color)
 {
-    gfx_begin();
     gfx_clear(C_BG);
     gfx_rrect(GFX_W / 2 - 34, 30, 68, 68, 20, C_ACCENT);
     gfx_icon(IC_LOGO, (float)GFX_W / 2, 64, 56, GRGB(255, 255, 255));
@@ -497,7 +521,95 @@ void ui_boot_screen(const char *status, gcol status_color, const char *footer)
         gfx_text_fit(100, 244 + i * 15, 760, 12, GW_REG, col, GA_LEFT, l);
     }
     gfx_rect(0, HINT_Y, GFX_W, GFX_H - HINT_Y, C_SIDEBAR);
+}
+
+void ui_boot_screen(const char *status, gcol status_color, const char *footer)
+{
+    gfx_begin();
+    boot_body(status, status_color);
     ui_hints(footer);
+    gfx_end();
+}
+
+void ui_spinner(int cx, int cy, int r, unsigned ms, gcol col)
+{
+    const int dots = 10;
+    int head = (int)((ms / 90u) % (unsigned)dots);
+    for (int i = 0; i < dots; i++) {
+        float a = (float)i * 6.2831853f / (float)dots - 1.5708f;
+        int age = (head - i + dots) % dots;                      /* 0 = the newest dot */
+        int alpha = 255 - age * 22;
+        gfx_circle((float)cx + (float)r * cosf(a), (float)cy + (float)r * sinf(a), 2.2f + (age == 0 ? 0.6f : 0), with_alpha(col, alpha));
+    }
+}
+
+void ui_wifi_dialog(int state, unsigned ms, const char *note)
+{
+    gfx_begin();
+    gfx_norec(true);
+    boot_body("", C_DIM);
+    gfx_norec(false);
+    ui_hit_reset();
+    gfx_dim(175);
+    gfx_rect(0, HINT_Y, GFX_W, GFX_H - HINT_Y, C_SIDEBAR);
+    if (g_th.divider) gfx_rect(0, HINT_Y, GFX_W, 1, C_BORDER);
+
+    int w = 620, h = state == UI_WIFI_FAILED ? 312 : 176;
+    int dx = (GFX_W - w) / 2, dy = (HINT_Y - h) / 2;
+    gfx_shadow(dx, dy, w, h, 18);
+    gfx_rrect(dx, dy, w, h, 18, C_CARD);
+    gfx_rrect_outline(dx, dy, w, h, 18, 1, C_BORDER);
+
+    int lx = dx + 32, tw = w - 64 - 72;
+    int icx = lx + 28, icy = dy + 58;
+    gfx_circle((float)icx, (float)icy, 28, with_alpha(C_WARN, 44));
+    const char *title, *sub;
+    if (state == UI_WIFI_BUSY) {
+        title = "Turning on Wi-Fi...";
+        sub = "Connecting to your network";
+        ui_spinner(icx, icy, 13, ms, C_WARN);
+    } else {
+        gfx_icon(IC_WIFI_OFF, (float)icx, (float)icy + 0.6f, 24, C_WARN);       /* (the symbol's own centre sits a hair above its box) */
+        if (state == UI_WIFI_FAILED) { title = "Wi-Fi could not be turned on"; sub = "The Vita did not allow it from inside the app."; }
+        else                         { title = "Wi-Fi is turned off";          sub = "VitaSend needs Wi-Fi to find other devices."; }
+    }
+    gfx_text_fit(lx + 72, dy + 46, tw, 22, GW_BOLD, C_TEXT, GA_LEFT, title);
+    gfx_text_fit(lx + 72, dy + 74, tw, 15, GW_REG, C_DIM, GA_LEFT, sub);
+
+    int by = dy + h - 44;
+    if (state == UI_WIFI_BUSY) {
+        int bw = w - 64, bx = lx, bar_y = dy + 96;
+        gfx_rrect(bx, bar_y, bw, 6, 3, GRGB(38, 47, 56));
+        int seg = bw / 4, pos = (int)((ms / 6u) % (unsigned)(bw + seg)) - seg;       /* a piece running to and fro */
+        int x0 = pos < 0 ? 0 : pos, x1 = pos + seg > bw ? bw : pos + seg;
+        if (x1 > x0) gfx_rrect(bx + x0, bar_y, x1 - x0, 6, 3, C_ACCENT);
+        ui_action(lx, by, PB_CIRCLE, "Cancel");
+        ui_hints("O Cancel");
+    } else if (state == UI_WIFI_FAILED) {
+        gfx_line_t ln[3];
+        const char *msg = "Turn it on in the Vita settings (Settings > Network). VitaSend keeps waiting and continues by itself.";
+        int n = gfx_wrap(msg, 15, GW_REG, w - 64, ln, 3);
+        for (int i = 0; i < n; i++) {
+            char tmp[160];
+            int l = ln[i].len < (int)sizeof tmp - 1 ? ln[i].len : (int)sizeof tmp - 1;
+            memcpy(tmp, ln[i].p, (size_t)l);
+            tmp[l] = 0;
+            gfx_text(lx, dy + 116 + i * 22, 15, GW_REG, C_TEXT, GA_LEFT, tmp);
+        }
+        if (note && note[0]) gfx_text_fit(lx, dy + 116 + n * 22 + 8, w - 64, 14, GW_MED, C_WARN, GA_LEFT, note);
+        else gfx_text_fit(lx, dy + 116 + n * 22 + 8, w - 64, 14, GW_REG, C_DIM, GA_LEFT, "TRIANGLE opens the Wi-Fi settings (VitaSend closes; start it again afterwards).");
+        int row1 = dy + h - 88;
+        int a = ui_action(lx, row1, PB_CROSS, "Try again");
+        ui_action(lx + a + 12, row1, PB_TRIANGLE, "Wi-Fi settings");
+        a = ui_action(lx, by, PB_SQUARE, "Continue without Wi-Fi");
+        ui_action(lx + a + 12, by, PB_CIRCLE, "Quit");
+        ui_hints("X Try again|TRI Wi-Fi settings|SQ Continue without Wi-Fi|O Quit");
+    } else {
+        int a = ui_action(lx, by, PB_CROSS, "Turn on Wi-Fi");
+        a += 12 + ui_action(lx + a + 12, by, PB_SQUARE, "Continue without Wi-Fi");
+        ui_action(lx + a + 12, by, PB_CIRCLE, "Quit");
+        ui_hints("X Turn on Wi-Fi|SQ Continue without Wi-Fi|O Quit");
+    }
     gfx_end();
 }
 

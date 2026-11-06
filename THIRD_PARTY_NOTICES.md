@@ -8,6 +8,7 @@ or builds on the following work.
 | **VitaShell** by TheFloW (and contributors) | `src/headbin.c`, the install steps in `src/vpk.c` and `plat_promote()` in `src/plat_vita.c` | GPL-3.0 | The `head.bin` template and hash layout, and the sequence "load PAF + ScePromoterUtil, promote the unpacked folder", follow VitaShell's package installer. This is why the whole project is GPL-3.0. <https://github.com/TheOfficialFloW/VitaShell> |
 | **mbedTLS** 3.6.2 | downloaded and built by `scripts/build-mbedtls.sh` (not included in this repository) | Apache-2.0 OR GPL-2.0-or-later | TLS, certificates, SHA-256, random numbers. <https://github.com/Mbed-TLS/mbedtls> |
 | **stb_truetype** v1.26 by Sean Barrett | `src/stb_truetype.h` | Public domain / MIT (your choice, see the end of the file) | font rasteriser |
+| **stb_image** v2.30 by Sean Barrett | `src/stb_image.h` | Public domain / MIT (your choice, see the end of the file) | picture decoder for the viewer (JPEG, PNG, BMP, GIF only) |
 | **Poppins** | compiled into `src/fontdata.c` (cut down and renamed "LS Sans") | SIL Open Font License 1.1 | <https://github.com/itfoundry/Poppins> |
 | **Liberation Sans** | compiled into `src/fontdata.c` (cut down and renamed "LS Fallback") | SIL Open Font License 1.1 | Greek / Cyrillic / rare letters. Full texts and copyright lines in [fonts/LICENSES.txt](fonts/LICENSES.txt) |
 | **VitaSDK** stub libraries and headers | linked / used at build time | various open licences | <https://vitasdk.org/> |

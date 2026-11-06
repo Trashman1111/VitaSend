@@ -74,6 +74,7 @@ void settings_load(const char *dir)
             double ss = json_num(json_get(j, "screensaver"), 30);
             if (ss >= 0 && ss <= 3600) s_set.screensaver = (int)ss;
             s_set.hide_ids = json_bool(json_get(j, "hideIds"), false);
+            ls_strlcpy(s_set.wifi_uri, json_str(json_get(j, "wifiSettingsUri"), ""), sizeof s_set.wifi_uri);
             double th = json_num(json_get(j, "theme"), 0);
             s_set.theme = (th >= 1 && th < 2) ? 1 : 0;
             const char *pin = json_str(json_get(j, "pin"), "");
@@ -119,6 +120,7 @@ static void save_locked(void)
     jw_kbool(&w, "hideIds", s_set.hide_ids);
     jw_kint(&w, "theme", s_set.theme);
     jw_kstr(&w, "pin", s_set.pin);
+    if (s_set.wifi_uri[0]) jw_kstr(&w, "wifiSettingsUri", s_set.wifi_uri);
     jw_key(&w, "favorites");
     jw_arr(&w);
     for (int i = 0; i < s_set.nfavs; i++) {
@@ -235,6 +237,12 @@ void settings_set_screensaver(int seconds)
     s_set.screensaver = (seconds >= 0 && seconds <= 3600) ? seconds : 30;
     save_locked();
     unlock();
+}
+
+void settings_wifi_uri(char *out, size_t cap)
+{
+    ls_settings s; settings_snapshot(&s);
+    ls_strlcpy(out, s.wifi_uri, cap);
 }
 
 void settings_set_hide_ids(bool hide)

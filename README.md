@@ -13,7 +13,7 @@ over your own Wi-Fi, no cloud, no cable.** A native homebrew app written in C, w
 [![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 > VitaSend is an independent project. It speaks the open LocalSend protocol but is **not affiliated with** the LocalSend
-> project or Sony. Status: **beta (v0.9.0)** - see [Status](#status).
+> project or Sony. Status: **beta (v0.9.4)** - see [Status](#status).
 
 <table>
   <tr>
@@ -26,7 +26,7 @@ over your own Wi-Fi, no cloud, no cable.** A native homebrew app written in C, w
   </tr>
 </table>
 
-More pictures are in [`docs/screens/`](docs/screens/) (OLED theme, settings, file browser, screensaver, ...). They are
+More pictures are in [`docs/screens/`](docs/screens/) (OLED theme, settings, file browser, picture and text viewer, copy / move, screensaver, ...). They are
 rendered on a PC by the same drawing code the Vita runs.
 
 ## Features
@@ -38,7 +38,8 @@ rendered on a PC by the same drawing code the Vita runs.
   Cyrillic text.
 * **Receive safely**: you accept or reject every request (or use *Quick Save* for favourites / everyone), optional **PIN**,
   free-space check, SHA-256 verification, existing files kept / skipped / overwritten as you choose.
-* **Files tab**: browse your memory cards, tick several files and send them together, rename, delete, create folders.
+* **Files tab**: browse your memory cards, tick several files and send them together, **copy** or **move** them to another folder or memory card, rename, delete, create folders. **X** opens the highlighted file: a **picture** (JPEG, PNG, BMP, GIF) or **text file** in the built-in viewer, a `.vpk` in the installer; tick several with **SQUARE** and **X** opens them as a queue you can page through.
+* **Wi-Fi off?** The app asks, tries to switch it on for you, or lets you **continue offline**. Retail firmware has no system call for the first, so then a button (**TRIANGLE**) opens the Vita's Wi-Fi settings.
 * **`.vpk` installer** like VitaShell's: install a received package with one button, install a whole **queue**, or let
   VitaSend install packages from favourites automatically (off by default). *Open app* right after installing.
 * **Screensaver** with the bouncing logo and live transfer / installation progress; wakes on touch, button, a request or
@@ -52,7 +53,7 @@ rendered on a PC by the same drawing code the Vita runs.
 You need a PS Vita with custom firmware (HENkaku / ensō - see the [Vita Hacks Guide](https://vita.hacks.guide/)) and
 [VitaShell](https://github.com/TheOfficialFloW/VitaShell).
 
-1. Download **`VitaSend-v090.vpk`** from the [Releases](../../releases) page.
+1. Download **`VitaSend-v094.vpk`** from the [Releases](../../releases) page.
 2. Copy it to your Vita (USB or FTP) and install it with VitaShell (open the file, press **X**).
 3. In the HENkaku settings turn on **"Enable unsafe homebrew"** - the installer needs the extended permissions
    (see [why](docs/BUILDING.md#why-the-app-is-unsafe)). Without it the app will not start.
@@ -65,7 +66,7 @@ You need a PS Vita with custom firmware (HENkaku / ensō - see the [Vita Hacks G
 * **From the Vita:** open the **Send** tab, press **SQUARE** to choose files (or **TRIANGLE** to type a text), pick the
   other device in the list and press **X**.
 * **Install an app you received:** when the transfer finishes, press **TRIANGLE** to install it (or open the **Files** tab
-  and press **SQUARE** on a `.vpk`).
+  and press **X** on a `.vpk`).
 * The Vita cannot see the other device? Some routers block multicast between Wi-Fi clients ("client isolation"). Turn that
   off, press **TRIANGLE** on the Receive tab to announce again, or use **SELECT > Add by IP** on the Send tab.
 
@@ -75,14 +76,14 @@ Everything else - controls, settings, the installer, troubleshooting - is in the
 
 VitaSend is a **beta**. What has been checked:
 
-* This is being used on a real PS Vita **PCH-1004** with the **LocalSend Windows, Linux and Android App**: receiving and sending files, text, installing
-  packages, touch, screensaver, sound.
-* About **520 automated checks** run on a PC against the real mbedTLS under AddressSanitizer / UBSan: the protocol
+* This is being used on a real PS Vita **PCH-1004** with the **LocalSend Windows, Linux, Android and iPhone apps**:
+  receiving and sending files, text, installing packages, touch, screensaver, sound.
+* More than **600 automated checks** run on a PC against the real mbedTLS under AddressSanitizer / UBSan: the protocol
   (against stand-ins that play the other LocalSend device), the transfer engines, the `.vpk` installer (ZIP / DEFLATE
   compared with Python's `zlib`, corrupted and malicious packages), and the whole interface including simulated touch.
   See [docs/TESTING.md](docs/TESTING.md).
-* **Not yet tested:** the LocalSend apps for iOS / macOS, other Vita models (PCH-100x vs PCH-200x, PS TV) and
-  firmware versions, ensō-only setups. Reports are very welcome - use the *Bug report* template and attach the log
+* **Not yet tested:** the LocalSend app for macOS, other Vita models (PCH-100x vs PCH-200x, PS TV) and firmware versions,
+  ensō-only setups. Reports are very welcome - use the *Bug report* template and attach the log
   (*Settings > Log*).
 
 Known limits: one transfer at a time, one TLS connection per file (many tiny files are slow), the browser-download API and
@@ -97,7 +98,7 @@ export VITASDK=/usr/local/vitasdk && export PATH=$VITASDK/bin:$PATH
 mkdir build && cd build && cmake .. && make -j4
 ```
 
-The result is `build/VitaSend-v090.vpk`. Docker, WSL, CMake options and common problems: **[docs/BUILDING.md](docs/BUILDING.md)**.
+The result is `build/VitaSend-v094.vpk`. Docker, WSL, CMake options and common problems: **[docs/BUILDING.md](docs/BUILDING.md)**.
 
 You can also build the whole program as a normal Linux program and test it without a Vita:
 
@@ -134,7 +135,7 @@ docs/       documentation and screenshots
 
 VitaSend is free software under the **GNU General Public License v3.0 or later** ([LICENSE](LICENSE)). The whole project is
 GPL because the installer follows [VitaShell](https://github.com/TheOfficialFloW/VitaShell) by TheFloW (GPL-3.0): the
-`head.bin` template and the install procedure. Other components: mbedTLS (Apache-2.0 / GPL-2.0+), stb_truetype
+`head.bin` template and the install procedure. Other components: mbedTLS (Apache-2.0 / GPL-2.0+), stb_truetype and stb_image
 (public domain), the Poppins and Liberation Sans fonts (SIL OFL 1.1) - details in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

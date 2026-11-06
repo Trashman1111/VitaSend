@@ -100,6 +100,12 @@ void ui_dialog_begin(int key, int w, int h, void (*under)(void *), void *ctx, in
 void ui_device_icon(const char *type, const char *model, float cx, float cy, float size, gcol c);
 /* Plain start-up / failure screen. */
 void ui_boot_screen(const char *status, gcol status_color, const char *footer);
+/* Start-up question "Wi-Fi is turned off" on top of the boot screen. state: 0 = ask, 1 = switching it on, 2 = could not.
+ * ms = any ever-growing time (animates the spinner). Registers the buttons for touch. */
+enum { UI_WIFI_ASK, UI_WIFI_BUSY, UI_WIFI_FAILED };
+void ui_wifi_dialog(int state, unsigned ms, const char *note);   /* note: a short extra line (failed state), or NULL */
+/* A turning dot ring (something is going on); (cx, cy) is its centre. */
+void ui_spinner(int cx, int cy, int r, unsigned ms, gcol col);
 
 /* Scrolling list bookkeeping: keeps `sel` visible inside a window of `rows` rows. */
 typedef struct { int sel, top; } ui_cursor;

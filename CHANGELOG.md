@@ -5,6 +5,58 @@ All notable changes to VitaSend. The format follows [Keep a Changelog](https://k
 
 How the project got here, step by step, is in [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md).
 
+## [0.9.4] - 2026-11-06
+
+### Fixed
+- **The Wi-Fi settings button went one page too far** (it opened *Configure Access Points*). It now asks the system for the Wi-Fi settings page itself (`settings_dlg:wifi`). That address is not on the community's list of known addresses (only `wifi::wps` and `wifi::manual` are), so it is a best guess; if it opens something else, put another one into `config.json` (`"wifiSettingsUri": "settings_dlg:..."`, VitaSend must be closed while editing) - no new build needed. If the system refuses the address, the plain Settings list (`settings_dlg:`) opens instead. `log.txt` shows `Wi-Fi: launching ... returned 0x...`.
+
+### Notes
+- Switching Wi-Fi on from inside the app does not work on firmware without the `sceWlanSetConfiguration` call (the log says *this firmware has no such call*); there the settings button is the way.
+
+## [0.9.3] - 2026-11-06
+
+### Added
+- **Wi-Fi settings button.** When switching Wi-Fi on from the app is refused (the author's firmware has no such system call), the *Wi-Fi could not be turned on* window now offers **TRIANGLE = Wi-Fi settings**, which opens the Vita's own settings (VitaSend closes; start it again afterwards). The Receive card's button becomes **Wi-Fi settings** in the same situation. If the settings cannot be opened, the window says so.
+- **Viewer for pictures and text files** (`src/app_view.c`, with the public-domain `stb_image` v2.30). **JPEG, PNG, BMP and GIF** are shown whole and scaled to the screen, JPEG photos turned the right way up (EXIF orientation); **text files** (txt, md, log, json, xml, ini, csv, source files, ...) are shown wrapped and scroll (the first 128 KB). **L / R**, **LEFT / RIGHT** or a tap on the left / right third go to the previous / next file; **O** closes. Pictures that would not fit in memory (more than 10 MP, progressive JPEG over 2.5 MP, other formats over 6 MP) are refused with a message.
+- **File queues.** Tick several files in the Files tab and press **X**: pictures and text files open as one queue you can page through; packages open one **Install these apps?** question with the list. Ticked folders and files that cannot be opened are left out (a message says so); packages and pictures cannot be mixed.
+
+### Changed
+- **Files tab keys**: **X** is the main button (open a folder, install a `.vpk`, view a picture or text file); **SQUARE** is now only *tick / untick*; **TRIANGLE** sends. The hint bar shows what X does for the highlighted file (*Open*, *Install*, *View*, *Install ticked*, ...).
+- The Files **SELECT** menu no longer repeats what has a button of its own (Install, Tick, Send); it keeps tick / untick all, copy, move, rename, delete and new folder.
+- The package question for several packages is titled **Install these apps?** (one package: *Install this app?*).
+- The **LR Tabs** hint is shown on the Receive tab only; L / R switch tabs everywhere as before.
+
+### Tested
+- New automated tests (`--only view`): hints, picture colours, EXIF rotation, PNG transparency, refused pictures, text scrolling and long lines, a binary file, queues of pictures / texts / packages, the slimmer menu, the hint bar of every tab; Wi-Fi settings button (`--only wifi`).
+
+### Please test
+- Opening the Wi-Fi settings (`settings_dlg:wifi::manual`, then `settings_dlg:`) could not be tried on a console; `log.txt` shows `Wi-Fi: launching ... returned 0x...`. Please send that line if nothing opens.
+- How long a big JPEG takes to decode on the Vita is unmeasured; the viewer shows *Loading...* and the buttons wait until it is done.
+
+## [0.9.2] - 2026-11-06
+
+### Added
+- **Wi-Fi switched off? Turn it on without leaving the app.** If Wi-Fi is off when VitaSend starts, a dialog asks: *Wi-Fi is turned off - VitaSend needs Wi-Fi to find other devices.* **X** turns it on (with a progress state and **O** to cancel), **SQUARE** *Continue without Wi-Fi* starts the app offline (Files, History, Settings all work; the server and discovery start by themselves when Wi-Fi comes later), **O** quits. If the system does not allow it from inside an app, the dialog says so and points to *Settings > Network*; VitaSend keeps waiting and continues by itself as soon as Wi-Fi is there.
+- **Wi-Fi lost while the app runs**: no pop-up. The Receive card shows an amber **No Wi-Fi** chip and *Wi-Fi not connected*, with a **Turn on Wi-Fi** button (**TRIANGLE**, also while the tab list has the focus, or tap it). The sidebar's bottom row becomes a tappable *No Wi-Fi* with a struck-through symbol. While it connects the card shows *Connecting* and *Turning on Wi-Fi...*; when the network is back it returns to *Ready* and announces itself again.
+
+### Please test
+- The switch-on request uses an undocumented system call (`sceWlanSetConfiguration`, the one vitacompanion uses), because Sony offers no official way for apps. It could not be tried on a real console while writing this: the system's answer is written to `log.txt` (`Wi-Fi: sceWlanSetConfiguration(1) returned 0x...`). If it does nothing on your firmware, the fallback dialog appears after 20 seconds - please report the log line.
+- A build without the `SceWlanBt_stub_weak` library (older VitaSDK) still works; the button then answers "not possible here".
+
+### Tested
+- New automated tests (`--only wifi`): Wi-Fi off at the start (ask, switch on, cancel, refuse, no network in time, continue offline, quit), Wi-Fi lost and regained while running, touch on the sidebar row.
+
+## [0.9.1] - 2026-11-05
+
+### Added
+- **Copy** and **Move** in the Files tab. *SELECT > Copy* / *Move* marks the ticked items (or the highlighted one); open the destination folder and press **TRIANGLE** (or tap **Copy here** / **Move here**). A copy never overwrites: an existing name becomes `name (1).ext`, also when copying into the same folder.
+- **Move**: inside one memory card the item is renamed, which is instant. Between two cards the data is copied first and the original is removed only after the copy of that item is complete, with a progress dialog and **O** to cancel; a failed or cancelled move never loses data. Nothing is ever overwritten (an existing name is skipped and reported), a folder cannot be moved into itself, and VitaSend's own data folder cannot be moved.
+- The Files options menu scrolls when it has more than nine entries.
+
+### Tested
+- Works with the LocalSend apps for Android, Windows, Linux and iPhone (reported by the author's own tests).
+- New automated tests for Copy and Move (`--only move`): rename, several items, name conflicts, folder into itself, cancel, a copy between cards with sub-folders, cancel during a big copy, not enough free space, touch.
+
 ## [0.9.0] - 2026-10-29 - first public release
 
 A beta: everything below works and is covered by the automated tests on a PC; the author has used it on a real PS Vita
@@ -26,4 +78,6 @@ together with the LocalSend desktop app. Expect rough edges on other hardware an
 - The LiveArea start image: text is centred on the logo and higher, so the system's Start marker no longer covers it.
 - Chimes: one when a download is finished, one when an installation is finished (once per queue); none in between.
 
+[0.9.2]: ../../releases/tag/v0.9.2
+[0.9.1]: ../../releases/tag/v0.9.1
 [0.9.0]: ../../releases/tag/v0.9.0

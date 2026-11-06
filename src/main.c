@@ -21,10 +21,13 @@
 #include "peers.h"
 #include "plat.h"
 #include "rx.h"
+#include "settings.h"
 #include "tls.h"
+#include "touch.h"
 #include "util.h"
 #include "ui.h"
 #include "vpk.h"
+#include "wifi.h"
 #include "xfer.h"
 
 #include <stdarg.h>
@@ -103,6 +106,37 @@ static bool self_tests(const char *dir)
 
 /* ------------------------------------------------------------------ main */
 
+/* The HTTPS server and the discovery thread: need an address, so they start once Wi-Fi is there. */
+static char *wifi_uri(void) { static char u[96]; settings_wifi_uri(u, sizeof u); return u; }
+
+static const char *s_announce_ip;
+static uint16_t    s_announce_port;
+
+__attribute__((unused)) static bool start_services(void)
+{
+    bool server_ok = false;
+    /* If the usual port is taken (for example by a copy of this app that did not shut down properly), use the next
+     * free one: other devices learn our port from the announcement, so this still works. */
+    uint16_t wanted_port = g_id.port;
+    for (unsigned i = 0; i < 11 && !server_ok; i++) {
+        uint16_t p = i < 10 ? (uint16_t)(wanted_port + i) : 0;       /* last resort: let the system pick a port */
+        server_ok = http_server_start(&p, g_id.https);
+        if (server_ok) {
+            g_id.port = p;
+            if (i == 0) ls_log("HTTPS server listening on port %u", p);
+            else ls_log("HTTPS server listening on port %u (%u was not available)", p, wanted_port);
+        } else if (i == 0) {
+            ls_log("FAIL TCP port %u: %s", wanted_port, plat_net_error_text());
+        }
+    }
+    if (!server_ok) ls_log("FAIL no TCP port could be opened (tried %u-%u and any free port)", wanted_port, wanted_port + 9u);
+
+    discovery_configure(s_announce_ip, s_announce_port, wanted_port);
+    if (!discovery_start()) ls_log("FAIL could not start the discovery thread");
+    return server_ok;
+}
+
+
 int main(int argc, char **argv)
 {
     ls_util_init();
@@ -138,6 +172,8 @@ int main(int argc, char **argv)
     (void)argv;
 #endif
 
+    s_announce_ip = announce_ip;
+    s_announce_port = announce_port;
     plat_init();
     const char *dir = plat_data_dir();
     plat_mkdirs(dir);
@@ -201,47 +237,55 @@ int main(int argc, char **argv)
         set_status(C_BAD, "Network init failed");
     }
 
-    /* wait for Wi-Fi */
+    /* wait for Wi-Fi: if it is off, ask whether to switch it on (no need to leave the app for the Vita settings) */
     char ip[16] = "";
     s_footer = "START Quit";
     uint32_t prev_buttons = ui_buttons();
     uint64_t t_start = plat_time_ms();
-    while (!g_quit && !plat_net_local_ip(ip)) {
-        set_status(C_WARN, "Waiting for Wi-Fi (turn it on in the Vita settings)...");
-        redraw();
+    bool asked = false;                                 /* the dialog has been shown at least once */
+    bool offline = false;                               /* "Continue without Wi-Fi" was chosen */
+    const char *note = NULL;                            /* a line in the dialog: why the settings did not open */
+    while (!g_quit && !offline && !plat_net_local_ip(ip)) {
+        asked = true;
+        wifi_poll(false);
+        wifi_state ws = wifi_get();
+        unsigned ms = (unsigned)(plat_time_ms() - t_start);
+        ui_wifi_dialog(ws == WIFI_CONNECTING ? UI_WIFI_BUSY : (ws == WIFI_FAILED ? UI_WIFI_FAILED : UI_WIFI_ASK), ms, note);
         uint32_t b = ui_buttons();
-        if ((b & UI_BTN_START) && !(prev_buttons & UI_BTN_START)) g_quit = true;
+        uint32_t pressed = b & ~prev_buttons;
         prev_buttons = b;
+        int tx = 0, ty = 0;                             /* a tap on a button of the dialog counts like pressing it */
+        touch_event te;
+        bool finger = ui_touch(&tx, &ty);               /* (a separate statement: tx / ty must be read after the call) */
+        if (touch_feed(finger, tx, ty, &te) && te.kind == TOUCH_TAP) pressed |= ui_touch_tap(te.sx, te.sy);
+        if (pressed & UI_BTN_START) g_quit = true;
+        if (ws == WIFI_CONNECTING) {
+            if (pressed & UI_BTN_CIRCLE) wifi_cancel();
+        } else {
+            if (pressed & UI_BTN_CIRCLE) g_quit = true;
+            if (pressed & UI_BTN_CROSS) wifi_request_on();
+            if (pressed & UI_BTN_SQUARE) offline = true;
+            if ((pressed & UI_BTN_TRIANGLE) && ws == WIFI_FAILED && !plat_open_wifi_settings(wifi_uri()))
+                note = "The Wi-Fi settings could not be opened from here - use Settings > Network.";
+        }
         plat_keep_awake();
-        plat_sleep_ms(250);
+        plat_sleep_ms(ws == WIFI_CONNECTING ? 40 : 100);
         if (run_seconds && plat_time_ms() - t_start > run_seconds * 1000u) g_quit = true;
     }
-    if (!g_quit) ls_log("Wi-Fi connected, IP %s", ip);
+    if (offline) wifi_cancel();
+    else wifi_poll(true);
+    if (asked && !g_quit) {                              /* the dialog was up: the plain boot screen takes over again */
+        set_status(C_DIM, "Starting...");
+        redraw();
+    }
+    if (!g_quit && !offline) ls_log("Wi-Fi connected, IP %s", ip);
 
     bool server_ok = false;
-    if (!g_quit) {
-        /* If the usual port is taken (for example by a copy of this app that did not shut down properly), use the next
-         * free one: other devices learn our port from the announcement, so this still works. */
-        uint16_t wanted_port = g_id.port;
-        for (unsigned i = 0; i < 11 && !server_ok; i++) {
-            uint16_t p = i < 10 ? (uint16_t)(wanted_port + i) : 0;       /* last resort: let the system pick a port */
-            server_ok = http_server_start(&p, g_id.https);
-            if (server_ok) {
-                g_id.port = p;
-                if (i == 0) ls_log("HTTPS server listening on port %u", p);
-                else ls_log("HTTPS server listening on port %u (%u was not available)", p, wanted_port);
-            } else if (i == 0) {
-                ls_log("FAIL TCP port %u: %s", wanted_port, plat_net_error_text());
-            }
-        }
-        if (!server_ok) ls_log("FAIL no TCP port could be opened (tried %u-%u and any free port)", wanted_port, wanted_port + 9u);
-
-        discovery_configure(announce_ip, announce_port, wanted_port);
-        if (!discovery_start()) ls_log("FAIL could not start the discovery thread");
-    }
+    if (!g_quit && !offline) server_ok = start_services();
+    if (!g_quit && offline) ls_log("continuing without Wi-Fi: the server starts when the network comes");
 
     if (!g_quit) {
-        app_opts ao = { run_seconds, server_ok };
+        app_opts ao = { run_seconds, offline ? true : server_ok, offline ? start_services : NULL };
         app_run(&ao);
     }
 

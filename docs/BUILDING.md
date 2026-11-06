@@ -22,7 +22,7 @@ cmake ..
 make -j4
 ```
 
-Result: `build/VitaSend-v<version>.vpk` (for example `VitaSend-v090.vpk`). Install it with VitaShell (copy it to the Vita
+Result: `build/VitaSend-v<version>.vpk` (for example `VitaSend-v094.vpk`). Install it with VitaShell (copy it to the Vita
 by USB or FTP, open it, press X) and enable **"Enable unsafe homebrew"** in the HENkaku settings - see
 [why](#why-the-app-is-unsafe).
 
@@ -102,4 +102,4 @@ gcc -fsyntax-only -std=gnu11 -Wall -Wextra -Wno-unused-parameter -D__vita__ -DLS
    the `message()` line in `CMakeLists.txt`, and `VERSION` in `host/test_transfer.py` (the test checks the About box).
 2. Add a section to [CHANGELOG.md](../CHANGELOG.md).
 3. Run the tests ([TESTING.md](TESTING.md)).
-4. Tag it: `git tag v0.9.1 && git push --tags`. The release workflow builds the VPK and attaches it to a GitHub release.
+4. Tag it: `git tag v0.9.4 && git push --tags`. The release workflow builds the VPK and attaches it to a GitHub release.

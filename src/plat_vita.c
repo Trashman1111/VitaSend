@@ -7,6 +7,7 @@
  * Author: trashman (VitaSend)
  */
 #include "plat.h"
+#include "util.h"
 
 #include <math.h>
 #ifdef LS_HAVE_APPMGR
@@ -560,6 +561,59 @@ bool plat_net_local_ip(char out[16])
     if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info) < 0) return false;
     snprintf(out, 16, "%s", info.ip_address);
     return out[0] && strcmp(out, "0.0.0.0") != 0;
+}
+
+/* Switching Wi-Fi on from inside an app.
+ *
+ * Sony gives apps no call for this (the only official switch is Settings > Flight Mode). The system module SceWlanBt exports
+ * sceWlanSetConfiguration() to user code; vitacompanion uses it as "request 0 = Wi-Fi off, request 1 = Wi-Fi on". That is
+ * reverse-engineered, not documented, so this is written defensively: the call is linked weakly (the build simply leaves it out
+ * if this VitaSDK has no stub library for it), its answer is logged word for word, and the caller (wifi.c) falls back to
+ * "turn it on in the Vita settings" if no network address appears. The system's own check dialog (SceNetCheckDialog) is not
+ * used: it needs the GPU-based common-dialog rendering that this software-drawn app does not have. */
+#ifdef LS_HAVE_WLAN
+extern int sceWlanSetConfiguration(int request) __attribute__((weak));
+#endif
+
+int plat_wifi_turn_on(char *detail, size_t cap)
+{
+#ifdef LS_HAVE_WLAN
+    if (!sceWlanSetConfiguration) { snprintf(detail, cap, "this firmware has no such call"); return -1; }
+    int r = sceWlanSetConfiguration(1);
+    ls_log("Wi-Fi: sceWlanSetConfiguration(1) returned 0x%08X", (unsigned)r);
+    if (r < 0) { snprintf(detail, cap, "the system said 0x%08X", (unsigned)r); return -1; }
+    snprintf(detail, cap, "the system said 0x%08X", (unsigned)r);
+    return 0;
+#else
+    snprintf(detail, cap, "this build has no switch-on support");
+    return -1;
+#endif
+}
+
+/* The Settings app can be started with its own URI scheme ("settings_dlg:..."). The community list (vita-uriCaller) only has the
+ * sub-pages "wifi::wps" and "wifi::manual" (the second one opens "Configure Access Points", which is one step too far); the page
+ * with the Wi-Fi switch itself is not on it, so "settings_dlg:wifi" is a guess. config.json can override it ("wifiSettingsUri") so
+ * other addresses can be tried without a new build. The answer is logged, and a plain "settings_dlg:" (the Settings main list) is
+ * tried when the address is refused. Like starting any other app from here, a success ends this app. */
+bool plat_open_wifi_settings(const char *uri)
+{
+#ifdef LS_HAVE_APPMGR
+    const char *uris[2] = { (uri && uri[0]) ? uri : "settings_dlg:wifi", "settings_dlg:" };
+    for (int i = 0; i < 2; i++) {
+        sceKernelDelayThread(10000);
+        int r = sceAppMgrLaunchAppByUri(0xFFFFF, uris[i]);
+        ls_log("Wi-Fi: launching %s returned 0x%08X", uris[i], (unsigned)r);
+        if (r >= 0) {
+            sceKernelDelayThread(300000);
+            sceKernelExitProcess(0);
+            return true;
+        }
+    }
+    return false;
+#else
+    (void)uri;
+    return false;
+#endif
 }
 
 ls_sock plat_udp_open(uint16_t port)

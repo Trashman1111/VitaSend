@@ -13,11 +13,11 @@ endif()
 project(VitaSend C)
 include("$ENV{VITASDK}/share/vita.cmake")
 
-message(STATUS "VitaSend v0.9.0 (LiveArea version 00.90)")
+message(STATUS "VitaSend v0.9.4 (LiveArea version 00.94)")
 
 # ---- options ----------------------------------------------------------------------------------------
 set(VITA_TITLEID  "LSND00001")          # 9 characters: 4 letters + 5 digits
-set(VITA_VERSION  "00.90")              # shown in LiveArea / VitaShell (digits only: 00.90 = v0.9.0)
+set(VITA_VERSION  "00.94")              # shown in LiveArea / VitaShell (digits only: 00.94 = v0.9.4)
 set(VITA_APP_NAME "VitaSend")
 
 option(LS_UNSAFE "Build the app with extended permissions (\"unsafe homebrew\") - needed by the .vpk installer" ON)
@@ -71,6 +71,9 @@ set(LS_SOURCES
   src/app_settings.c
   src/app_dialogs.c
   src/app_install.c
+  src/app_move.c
+  src/app_view.c
+  src/wifi.c
   src/app_saver.c
   src/plat_vita.c
   src/ui_vita.c
@@ -112,6 +115,13 @@ if(EXISTS "$ENV{VITASDK}/arm-vita-eabi/lib/libSceAppMgr_stub.a")
   add_definitions(-DLS_HAVE_APPMGR)
 endif()
 
+# "Turn on Wi-Fi" inside the app uses SceWlanBt's sceWlanSetConfiguration (linked weakly). Without that stub library the button
+# still appears, but answers "not possible here" and points to the Vita settings.
+if(EXISTS "$ENV{VITASDK}/arm-vita-eabi/lib/libSceWlanBt_stub_weak.a")
+  list(APPEND LS_STUBS SceWlanBt_stub_weak)
+  add_definitions(-DLS_HAVE_WLAN)
+endif()
+
 target_link_libraries(${PROJECT_NAME}
   mbedtls mbedx509 mbedcrypto
   ${LS_STUBS}
@@ -126,7 +136,7 @@ else()
   vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
 endif()
 
-vita_create_vpk(${PROJECT_NAME}-v090.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
+vita_create_vpk(${PROJECT_NAME}-v094.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME    ${VITA_APP_NAME}
   FILE sce_sys/icon0.png                          sce_sys/icon0.png

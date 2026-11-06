@@ -133,7 +133,11 @@ bool plat_path_info(const char *path, bool *is_dir, uint64_t *size)
     return true;
 }
 
-bool plat_rename(const char *from, const char *to) { return rename(from, to) == 0; }
+bool plat_rename(const char *from, const char *to)
+{
+    if (getenv("LS_FAIL_RENAME")) return false;          /* tests: behave like two memory cards (a rename cannot cross them) */
+    return rename(from, to) == 0;
+}
 bool plat_remove(const char *path)                 { return unlink(path) == 0; }
 bool plat_rmdir(const char *path)                  { return rmdir(path) == 0; }
 
@@ -298,8 +302,50 @@ bool plat_net_init(void)
 
 void plat_net_shutdown(void) {}
 
+/* ---- tests: a fake "Wi-Fi switch". The file named by LS_WIFI_FILE says "off" while Wi-Fi is off; the test script writes it. ---- */
+static uint64_t s_wifi_on_at;                          /* when a successful switch-on request takes effect (0 = none pending) */
+
+static bool wifi_fake_off(void)
+{
+    const char *f = getenv("LS_WIFI_FILE");
+    if (!f || !f[0]) return false;
+    if (s_wifi_on_at && plat_time_ms() >= s_wifi_on_at) {
+        FILE *o = fopen(f, "w");
+        if (o) { fputs("on\n", o); fclose(o); }
+        s_wifi_on_at = 0;
+    }
+    FILE *in = fopen(f, "r");
+    if (!in) return false;
+    char b[8] = "";
+    if (!fgets(b, sizeof b, in)) b[0] = 0;
+    fclose(in);
+    return strncmp(b, "off", 3) == 0;
+}
+
+int plat_wifi_turn_on(char *detail, size_t cap)
+{
+    const char *mode = getenv("LS_WIFI_TURNON");
+    if (!mode) mode = "ok";
+    if (!strcmp(mode, "fail")) { snprintf(detail, cap, "not supported (test)"); return -1; }
+    if (!strcmp(mode, "ok")) {
+        const char *d = getenv("LS_WIFI_DELAY_MS");
+        s_wifi_on_at = plat_time_ms() + (d ? (uint64_t)atoi(d) : 600u);
+        if (s_wifi_on_at == 0) s_wifi_on_at = 1;
+    }
+    snprintf(detail, cap, "test (%s)", mode);          /* "nojoin": accepted, but the network never comes */
+    return 0;
+}
+
+bool plat_open_wifi_settings(const char *uri)
+{
+    if (getenv("LS_WIFI_SETTINGS_FAIL")) { ls_log("Wi-Fi: could not open the Wi-Fi settings (test)"); return false; }
+    ls_log("Wi-Fi: opening the Wi-Fi settings (test: the app keeps running; address %s)", uri && uri[0] ? uri : "default");
+    return true;
+}
+
 bool plat_net_local_ip(char out[16])
 {
+    if (wifi_fake_off()) { out[0] = 0; return false; }
     /* "connect" a UDP socket to a public address (nothing is sent) to learn our outgoing IP */
     int s = socket(AF_INET, SOCK_DGRAM, 0);
     if (s < 0) return false;

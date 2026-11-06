@@ -12,6 +12,7 @@
 typedef struct {
     unsigned run_seconds;       /* host test builds: stop after this long (0 = run until the user quits) */
     bool     server_ok;         /* the HTTPS server is listening */
+    bool   (*start_services)(void);   /* started without Wi-Fi: called once when Wi-Fi comes; starts server + discovery, returns server_ok (NULL = already running) */
 } app_opts;
 
 /* Returns when the user quits (or run_seconds elapsed, or g_quit was set). */

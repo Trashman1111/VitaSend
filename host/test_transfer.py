@@ -22,7 +22,7 @@ from urllib.parse import urlparse, parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
 ap.add_argument("--binary", default=os.path.join(HERE, "localsend-host"))
-ap.add_argument("--only", default="", choices=["", "recv", "send", "extra", "install", "privacy", "theme", "touch", "migrate", "files", "exists", "retry", "queue", "polish", "dpad", "x11", "x13", "shots"])
+ap.add_argument("--only", default="", choices=["", "recv", "send", "extra", "install", "privacy", "theme", "touch", "migrate", "files", "exists", "retry", "queue", "polish", "dpad", "x11", "x13", "move", "wifi", "view", "shots"])
 ap.add_argument("--shots-dir", default=os.path.join(HERE, "..", "docs", "screens"), help="with --only shots: where the pictures go")
 ap.add_argument("--keep", action="store_true")
 args = ap.parse_args()
@@ -54,7 +54,7 @@ def sha(b):
 # =========================================================================== the program under test
 OSK_ROWS = ["1234567890-_=+", "qwertyuiop[]()", "asdfghjkl;:'\"/", "zxcvbnm,.?!@#$", "QWERTYUIOP{}<>", "ASDFGHJKL%^&*\\", "ZXCVBNM`~|    "]
 
-VERSION = "0.9.0"
+VERSION = "0.9.4"
 SET_ROWS = {"name": 0, "pin": 1, "hide": 2, "folder": 3, "accept": 4, "exists": 5, "autoinst": 6, "theme": 7, "battery": 8, "clock": 9, "saver": 10, "sound": 11, "about": 12, "log": 13, "quit": 14}
 
 def osk_keys(text, digits=False):
@@ -109,7 +109,7 @@ def osk_keys_unicode(text):
     return keys
 
 class Vita:
-    def __init__(self, name, port, peer_port, config=None, browse=None, seconds=900, extra=None, env=None):
+    def __init__(self, name, port, peer_port, config=None, browse=None, seconds=900, extra=None, env=None, ready=True):
         self.name, self.port = name, port
         self.dir = os.path.join(ROOT, name)
         self.data = os.path.join(self.dir, "data")
@@ -132,6 +132,7 @@ class Vita:
         assert wait_for(lambda: os.path.exists(self.fifo) and os.path.exists(self.screen_file), 10), "program did not start"
         self.kf = open(self.fifo, "w", buffering=1)
         self.fp = None
+        if not ready: return                     # (Wi-Fi is off at the start: the Receive page only comes later)
         wait_for(lambda: "This device" in self.screen(), 10)
         self.fp = self.screen().split("Fingerprint")[1].split()[0]
 
@@ -170,15 +171,37 @@ class Vita:
             t = l[1:].strip()
             if not t or t.startswith("[UP") or t.startswith("/") or re.match(r"\[[ x]\]\s", t): continue
             t = re.split(r"\s{2,}", t)[0]
-            if t.startswith(("Send ", "Install", "Tick ", "Untick ", "Rename ", "Delete ", "New folder here", "Open ")): out.append(t)
+            if t.startswith(("Send ", "Install", "Tick ", "Untick ", "Rename ", "Delete ", "New folder here", "Open ", "Move ", "Copy ", "Cancel the move", "Cancel the copy")): out.append(t)
         return out
     def menu_index(self, prefix):
         return next(n for n, t in enumerate(self.menu_items()) if t.startswith(prefix))
+    def menu_focused(self):
+        """The text of the highlighted entry of the options menu ('' if none can be seen)."""
+        lines = self.screen().splitlines()
+        try: i = next(n for n, l in enumerate(lines) if l.strip().startswith("Options"))
+        except StopIteration: return ""
+        for l in lines[i + 1:]:
+            if l.startswith(">"):
+                t = re.split(r"\s{2,}", l[1:].strip())[0]
+                if t.startswith(("Send ", "Install", "Tick ", "Untick ", "Rename ", "Delete ", "New folder here", "Open ", "Move ", "Copy ", "Cancel the move", "Cancel the copy")): return t
+        return ""
     def menu_pick(self, prefix):
-        """Chooses an entry of the options menu with the buttons."""
-        self.keys(*(["up"] * 9))
-        time.sleep(0.5)
-        self.keys(*(["down"] * self.menu_index(prefix)), "cross")
+        """Chooses an entry of the options menu with the buttons (the menu scrolls when it has more than 9 entries)."""
+        self.keys(*(["up"] * 12))
+        first = None
+        def at_top():
+            nonlocal first
+            items = self.menu_items()
+            first = items[0] if items else None
+            return first is not None and self.menu_focused() == first
+        if not wait_for(at_top, 8): raise AssertionError("menu cursor did not reach the top: " + self.screen())
+        for _ in range(14):
+            cur = self.menu_focused()
+            if cur.startswith(prefix):
+                self.keys("cross"); return
+            self.keys("down")
+            if not wait_for(lambda: self.menu_focused() not in ("", cur), 4): break
+        raise AssertionError("menu entry not found: " + prefix + " in " + self.screen())
     def type_text(self, text, digits=False):
         self.keys(*osk_keys(text, digits))
     def goto_setting(self, name):
@@ -1109,13 +1132,13 @@ def test_install():
     check("the tab remembers its place", V.has("a_safe.vpk"), V.screen())
 
     # ---- install a normal package
-    V.keys("square")
-    check("[SQUARE] on a .vpk asks before installing, with its details",
+    V.keys("cross")
+    check("[X] on a .vpk asks before installing, with its details",
           V.wait_screen("Install this app?", 5) and "Safe Game" in V.screen() and "SAFE00001" in V.screen() and "02.50" in V.screen(), V.screen())
     check("a normal package shows no permission warning", "extended permissions" not in V.screen(), V.screen())
     V.keys("circle")
     check("[O] cancels without installing", V.wait_screen("screen=files", 3) and not os.path.exists(installed_dir(V, "SAFE00001")), V.screen())
-    V.keys("square"); V.wait_screen("Install this app?", 5); V.keys("cross")
+    V.keys("cross"); V.wait_screen("Install this app?", 5); V.keys("cross")
     check("installing finishes", V.wait_screen("Installed", 20) and "Safe Game is installed" in V.screen(), V.screen())
     d = installed_dir(V, "SAFE00001")
     check("the folder handed to the system installer has every file, byte for byte",
@@ -1127,7 +1150,7 @@ def test_install():
     check("closing returns to the Files tab", V.wait_screen("screen=files", 3), V.screen())
 
     # ---- extended permissions warning
-    V.keys("down"); V.keys("square")
+    V.keys("down"); V.keys("cross")
     check("a package with extended permissions shows a warning",
           V.wait_screen("Install this app?", 5) and "extended permissions" in V.screen() and "UNSF00001" in V.screen(), V.screen())
     V.keys("circle")
@@ -1136,17 +1159,17 @@ def test_install():
     for fname, why, label in (("c_noeboot.vpk", "eboot.bin", "no eboot.bin"), ("f_notzip.vpk", "Not a VPK/ZIP", "not a zip"),
                               ("g_self.vpk", "cannot replace itself", "this very app"), ("j_nosfo.vpk", "param.sfo", "no param.sfo")):
         check(f"cursor on {fname}", files_row(V, fname), V.screen())
-        V.keys("square")
+        V.keys("cross")
         check(f"{label}: refused with a reason", V.wait_screen("Cannot install this package", 5) and why in V.screen(), V.screen())
         V.keys("cross"); V.wait_screen("screen=files", 3)
     check("cursor on d_evil.vpk", files_row(V, "d_evil.vpk"), V.screen())
-    V.keys("square"); V.wait_screen("Install this app?", 5); V.keys("cross")
+    V.keys("cross"); V.wait_screen("Install this app?", 5); V.keys("cross")
     check("a package with a '..' path is refused while unpacking", V.wait_screen("Installation failed", 20) and "Unsafe file name" in V.screen(), V.screen())
     check("nothing escaped from the scratch folder", not os.path.exists(os.path.join(V.data, "escape.txt")) and not os.path.exists(os.path.join(ROOT, "escape.txt")))
     check("nothing was installed", not os.path.exists(installed_dir(V, "EVIL00001")))
     V.keys("cross"); V.wait_screen("screen=files", 3)
     check("cursor on e_crc.vpk", files_row(V, "e_crc.vpk"), V.screen())
-    V.keys("square"); V.wait_screen("Install this app?", 5); V.keys("cross")
+    V.keys("cross"); V.wait_screen("Install this app?", 5); V.keys("cross")
     check("a damaged file inside a package is detected (checksum)", V.wait_screen("Installation failed", 20) and ("checksum" in V.screen() or "damaged" in V.screen()), V.screen())
     check("nothing was installed from it", not os.path.exists(installed_dir(V, "CRCX00001")))
     check("scratch folder cleaned after a failure", not os.path.exists(os.path.join(V.data, "pkg")))
@@ -1154,7 +1177,7 @@ def test_install():
 
     # ---- a stored (uncompressed) package
     check("cursor on i_stored.vpk", files_row(V, "i_stored.vpk"), V.screen())
-    V.keys("square"); V.wait_screen("Install this app?", 5); V.keys("cross")
+    V.keys("cross"); V.wait_screen("Install this app?", 5); V.keys("cross")
     check("a stored (not compressed) package installs too", V.wait_screen("Stored App is installed", 20), V.screen())
     d = installed_dir(V, "STOR00001")
     check("and its files are intact", all(open(os.path.join(d, n), "rb").read() == b for n, b in S.items()))
@@ -1162,7 +1185,7 @@ def test_install():
 
     # ---- cancel while unpacking + uploads refused while installing
     check("cursor on h_many.vpk", files_row(V, "h_many.vpk"), V.screen())
-    V.keys("square"); V.wait_screen("Install this app?", 5); V.keys("cross")
+    V.keys("cross"); V.wait_screen("Install this app?", 5); V.keys("cross")
     check("progress screen shows while unpacking", V.wait_screen("Installing", 5) and "Cancel" in V.screen(), V.screen())
     st, _ = prepare(port, [file_entry("x", "x.bin", b"123")], alias="Rude")
     check("a sender is told 'busy' (409) while a package installs", st == 409, st)
@@ -1176,7 +1199,7 @@ def test_install():
     V2 = Vita("inst2", port + 1, 53399, config={"alias": "Installer2", "receiveDir": recv}, env={"LS_FAKE_PROMOTE_FAIL": "1"})
     VITAS.append(V2)
     V2.keys("r", "r", "r"); V2.wait_screen("screen=files", 5)
-    V2.keys("square"); V2.wait_screen("Install this app?", 5); V2.keys("cross")
+    V2.keys("cross"); V2.wait_screen("Install this app?", 5); V2.keys("cross")
     check("if the system installer refuses, the reason is shown", V2.wait_screen("Installation failed", 20) and "promoter failed" in V2.screen(), V2.screen())
     check("and the scratch folder is cleaned up", not os.path.exists(os.path.join(V2.data, "pkg")))
     V2.stop(); VITAS.remove(V2)
@@ -1216,7 +1239,7 @@ def test_install():
     upload(V3.port, j["sessionId"], "a", j["files"]["a"], data); upload(V3.port, j["sessionId"], "b", j["files"]["b"], data)
     check("two received packages: the dialog offers to install all of them", V3.wait_screen("Install all 2 packages", 8), V3.screen())
     V3.keys("triangle")
-    check("[TRIANGLE] asks once for both packages", V3.wait_screen("Install these 2 apps?", 5) and V3.has("Sent Over Wi-Fi"), V3.screen())
+    check("[TRIANGLE] asks once for both packages", V3.wait_screen("Install these apps?", 5) and V3.has("2 packages") and V3.has("Sent Over Wi-Fi"), V3.screen())
     V3.keys("circle")
     check("[O] cancels and goes back", V3.wait_screen("This device", 5) and not os.path.exists(os.path.join(V3.data, "pkg")), V3.screen())
     V3.keys("r", "r", "r")
@@ -1267,7 +1290,7 @@ def test_queue():
     check("three packages and a broken file arrive", receive_files(V, {"alpha.vpk": blobs["alpha"], "beta.vpk": blobs["beta"], "gamma.vpk": blobs["gamma"], "bad.vpk": notzip}) == 200)
     check("the result offers to install all four", V.wait_screen("Install all 4 packages", 10), V.screen())
     V.keys("triangle")
-    check("one question lists the installable apps", V.wait_screen("Install these 3 apps?", 5) and V.has("Alpha App") and V.has("Beta Tool") and V.has("Gamma Game"), V.screen())
+    check("one question lists the installable apps", V.wait_screen("Install these apps?", 5) and V.has("Alpha App") and V.has("Beta Tool") and V.has("Gamma Game"), V.screen())
     check("the broken package is left out, with the reason", V.has("1 package cannot be installed") and V.has("bad.vpk"), V.screen())
     check("extended permissions are flagged", V.has("extended permissions"), V.screen())
     V.keys("circle")
@@ -1282,9 +1305,11 @@ def test_queue():
     V.menu_pick("Tick everything")
     V.wait_screen("4 selected", 6)
     V.keys("select"); V.wait_screen("Options", 5)
-    check("with ticked packages the menu offers to install them all", any(t.startswith("Install the 4 ticked .vpk") for t in V.menu_items()), V.menu_items())
-    V.menu_pick("Install the 4 ticked")
-    check("it asks once (same list)", V.wait_screen("Install these 3 apps?", 8) and V.has("1 package cannot be installed"), V.screen())
+    check("the menu does not repeat the install button", not any(t.startswith("Install") for t in V.menu_items()), V.menu_items())
+    V.keys("circle"); V.wait_screen("screen=files", 5)
+    files_cursor(V, V.recv, "alpha.vpk")
+    V.keys("cross")                                       # X with packages ticked: one question for all
+    check("it asks once (same list)", V.wait_screen("Install these apps?", 8) and V.has("1 package cannot be installed"), V.screen())
     c0 = V.log().count("finished chime played")
     V.keys("cross")
     check("they install one after another", V.wait_screen("All installed", 30) and V.has("3 of 3 installed"), V.screen())
@@ -1304,9 +1329,9 @@ def test_queue():
     receive_files(V, {"a.vpk": blobs["alpha"], "b.vpk": blobs["badcrc"], "c.vpk": blobs["gamma"]})
     V.keys("cross"); V.wait_screen("screen=files", 5)
     V.keys("select"); V.wait_screen("Options", 5)
-    V.menu_pick("Tick everything"); V.wait_screen("3 selected", 6); V.keys("select"); V.wait_screen("Options", 5)
-    V.menu_pick("Install the 3 ticked")
-    V.wait_screen("Install these 3 apps?", 8); V.keys("cross")
+    V.menu_pick("Tick everything"); V.wait_screen("3 selected", 6)
+    files_cursor(V, V.recv, "a.vpk"); V.keys("cross")
+    V.wait_screen("Install these apps?", 8); V.keys("cross")
     check("a broken package ends in 'Finished with problems' ...", V.wait_screen("Finished with problems", 30) and V.has("2 of 3 installed"), V.screen())
     check("... the others were installed anyway", os.path.isdir(installed_dir(V, "ALPH00001")) and os.path.isdir(installed_dir(V, "GAMM00001")) and not os.path.isdir(installed_dir(V, "BCRC00001")), None)
     check("the summary says what went wrong", V.has("Broken Crc"), V.screen())
@@ -1319,9 +1344,9 @@ def test_queue():
     receive_files(V, {"1many.vpk": blobs["many"], "2alpha.vpk": blobs["alpha"]})
     V.keys("cross"); V.wait_screen("screen=files", 5)
     V.keys("select"); V.wait_screen("Options", 5)
-    V.menu_pick("Tick everything"); V.wait_screen("2 selected", 6); V.keys("select"); V.wait_screen("Options", 5)
-    V.menu_pick("Install the 2 ticked")
-    V.wait_screen("Install these 2 apps?", 8); V.keys("cross")
+    V.menu_pick("Tick everything"); V.wait_screen("2 selected", 6)
+    files_cursor(V, V.recv, "1many.vpk"); V.keys("cross")
+    V.wait_screen("Install these apps?", 8); V.keys("cross")
     check("progress shows which package is being installed", V.wait_screen("Installing 1 of 2", 10) and V.has("Next: Alpha App"), V.screen())
     check("a sender is told 'busy' while the queue runs", prepare(V.port, [file_entry("x", "x.bin", b"1")])[0] == 409)
     V.keys("circle")
@@ -1487,7 +1512,7 @@ def test_x13():
     V.wait_screen("screen=receive", 5)
     V.keys("r", "r", "r")
     V.wait_screen("tab=Files screen=files", 5)
-    V.keys("square"); V.wait_screen("Install this app?", 5); V.keys("cross")
+    V.keys("cross"); V.wait_screen("Install this app?", 5); V.keys("cross")
     check("the manual installation started", V.wait_screen("Installing", 5), V.screen()[:200])
     check("the screensaver comes on during the manual installation", V.wait_screen("screen=saver", 10), V.screen()[:120])
     check("the end of the installation wakes it", wait_for(lambda: "screen=saver" not in V.screen() and V.has("Installed"), 30), V.screen()[:200] + V.log()[-500:])
@@ -1810,10 +1835,12 @@ def test_touch():
     V.drag(500, 250, 500, 420)
     check("dragging down scrolls back", wait_for(lambda: "adir" in V.screen() and "f01.bin" in V.screen(), 8), V.screen())
     check("the scrollbar/selection stayed consistent", "5 / 15" in V.screen() or "1 / 15" in V.screen(), V.screen())
-    V.tap(500, 185)                                     # row 2 (f01.bin): not a .vpk -> a tap ticks it
-    check("tapping a plain file ticks it", V.wait_screen("1 selected", 6) and V.wait_screen("[x]  f01.bin", 6), V.screen())
+    V.tap(500, 185)                                     # row 2 (f01.bin): not a picture / text / .vpk -> a tap says it cannot be opened
+    check("tapping a plain file opens it - here: says it cannot be opened (nothing ticked)", V.wait_screen("cannot be opened here", 6) and "selected" not in V.screen(), V.screen())
     r = [h for h in V.hits() if h[0] == "C" and int(h[3]) == 56 and int(h[5]) == 1]       # the tick circle of that row
     check("each file row has a tick circle area", len(r) == 1, V.hits()[:12])
+    if r: V.tap(int(r[0][1]) + 20, int(r[0][2]) + int(r[0][4]) // 2)
+    check("tapping the tick circle ticks the row", V.wait_screen("1 selected", 6) and V.wait_screen("[x]  f01.bin", 6), V.screen())
     if r: V.tap(int(r[0][1]) + 20, int(r[0][2]) + int(r[0][4]) // 2)
     check("tapping the tick circle unticks the row", wait_for(lambda: "[x]  f01.bin" not in V.screen() and "1 selected" not in V.screen(), 6), V.screen())
     if r: V.tap(int(r[0][1]) + 20, int(r[0][2]) + int(r[0][4]) // 2)
@@ -1994,7 +2021,7 @@ def test_files():
     check("'Tick everything in this folder' ticks all 5", V.wait_screen("5 selected", 6) and V.screen().count("[x]") == 5, V.screen())
     V.keys("select")
     V.wait_screen("Options", 5)
-    check("with ticked items the menu offers to send / untick / delete them", all(any(t.startswith(p) for t in V.menu_items()) for p in ("Send the 5 ticked", "Untick everything (5)", "Delete the 5 ticked")), (V.menu_items(), V.screen()))
+    check("with ticked items the menu offers untick / copy / move / delete them (Send is a button)", all(any(t.startswith(p) for t in V.menu_items()) for p in ("Untick everything (5)", "Copy the 5 ticked", "Move the 5 ticked", "Delete the 5 ticked")) and not any(t.startswith("Send") for t in V.menu_items()), (V.menu_items(), V.screen()))
     V.menu_pick("Untick everything")
     check("'Untick everything' clears the ticks", wait_for(lambda: "[x]" not in V.screen() and "screen=files" in V.screen(), 6), V.screen())
 
@@ -2261,9 +2288,9 @@ def test_shots():
         V.keys(*(["down"] * names.index(name)))
         if not wait_for(lambda: any(l.startswith(">") and name in l for l in V.screen().splitlines()), 8): print("   !! cursor not on", name)
     for vpk, shot in (("SampleGame-1.20.vpk", "install-ask"), ("SystemTool.vpk", "install-ask-unsafe")):
-        to_row(V, vpk); V.keys("square"); expect(V, "Install this app?", shot); snap(V, shot, 0.4)
+        to_row(V, vpk); V.keys("cross"); expect(V, "Install this app?", shot); snap(V, shot, 0.4)
         V.keys("circle"); expect(V, "screen=files", "back to Files")
-    to_row(V, "SampleGame-1.20.vpk"); V.keys("square"); expect(V, "Install this app?", "install"); V.keys("cross")
+    to_row(V, "SampleGame-1.20.vpk"); V.keys("cross"); expect(V, "Install this app?", "install"); V.keys("cross")
     expect(V, "Installing", "install progress", 5); snap(V, "install-progress", 2.2)
     expect(V, "is installed", "install done", 25); snap(V, "install-done", 0.5)
     V.keys("circle"); expect(V, "screen=files", "back to Files")
@@ -2294,6 +2321,55 @@ def test_shots():
     if "Choose with the D-pad" in V.screen(): V.keys("circle"); time.sleep(0.6)
     V.goto_setting("about"); time.sleep(0.6); expect(V, "VitaSend v", "About box", 5); snap(V, "settings-about", 0.5)
     V.stop(); VITAS.remove(V)
+    # ---- moving files: the options menu, a move waiting for its folder, the copy between two cards
+    V = new_vita("shots-move", 53321, {"alias": "Vita-7F3A", "screensaver": 0, "receiveDir": "ux0:data/Documents"},
+                 extra_env={"LS_FAIL_RENAME": "1", "LS_SLOW_MOVE_MS": "450"})
+    D = "ux0:data/Documents"
+    os.makedirs(os.path.join(D, "Archive")); os.makedirs(os.path.join(D, "Notes"))
+    for n, sz in (("holiday-photo.jpg", 2_600_000), ("notes.txt", 2_100), ("report.pdf", 842_000)):
+        open(os.path.join(D, n), "wb").write(rnd(sz, 6))
+    V.keys("r", "r", "r"); expect(V, "tab=Files screen=files", "files tab (move)", 6)
+    files_cursor(V, D, "holiday-photo.jpg"); V.keys("square", "down", "down", "square"); expect(V, "2 selected", "ticked", 5)
+    V.keys("select"); expect(V, "Options", "options menu", 5); snap(V, "files-menu", 0.6)
+    V.menu_pick("Move the 2 ticked"); expect(V, "Moving 2 items", "move marked", 5)
+    files_cursor(V, D, "Archive"); V.keys("cross"); expect(V, "Move here", "destination open", 5); time.sleep(2.5); snap(V, "files-move", 0.3)
+    V.keys("triangle"); expect(V, "screen=move", "copy dialog", 6); snap(V, "move-progress", 0.4)
+    expect(V, "Moved 2 items", "move done", 30)
+    V.stop(); VITAS.remove(V)
+    # ---- the viewer: a picture, a text, a queue of several
+    from PIL import Image as _I, ImageDraw
+    P = "ux0:data/Photos"; os.makedirs(P, exist_ok=True)
+    for k, (c1, c2) in enumerate((((250, 160, 60), (40, 30, 90)), ((60, 170, 200), (10, 40, 60)), ((120, 200, 120), (20, 60, 40)))):
+        im = _I.new("RGB", (1600, 1200)); d = ImageDraw.Draw(im)
+        for y in range(1200):
+            f = y / 1199; d.line([(0, y), (1600, y)], fill=tuple(int(c1[i] + (c2[i] - c1[i]) * f) for i in range(3)))
+        d.ellipse((1000 - 90 * k, 200, 1300 - 90 * k, 500), fill=(255, 240, 200))
+        d.polygon([(0, 1200), (500, 700 + 60 * k), (900, 1000), (1300, 650), (1600, 1050 - 40 * k), (1600, 1200)], fill=(20, 25, 35))
+        im.save(os.path.join(P, "IMG_%d.jpg" % (3100 + k)), quality=88)
+    open(os.path.join(P, "readme.txt"), "w").write("VitaSend - notes\n\n" + "\n".join(
+        "%02d. Pictures, text files and packages open with X. SQUARE ticks, and X then opens everything ticked as a queue you can page through with L and R." % n for n in range(1, 40)))
+    V = new_vita("shots-view", 53323, {"alias": "Vita-7F3A", "screensaver": 0, "receiveDir": P})
+    V.keys("r", "r", "r"); expect(V, "tab=Files screen=files", "files tab (view)", 6)
+    files_cursor(V, P, "IMG_3100.jpg"); V.keys("square", "down", "square", "down", "square"); expect(V, "3 selected", "ticked pictures", 5)
+    files_cursor(V, P, "IMG_3100.jpg"); expect(V, "View ticked", "hint", 4); snap(V, "files-ticked", 0.5)
+    V.keys("cross"); expect(V, "screen=view", "viewer", 5); expect(V, "1600 x 1200", "picture", 8); snap(V, "view-image", 0.6)
+    V.keys("circle"); expect(V, "screen=files", "back"); V.keys("select"); expect(V, "Options", "menu", 4); V.menu_pick("Untick everything"); expect(V, "screen=files", "unticked")
+    files_cursor(V, P, "readme.txt"); V.keys("cross"); expect(V, "Pictures, text files", "text", 8); snap(V, "view-text", 0.6)
+    V.stop(); VITAS.remove(V)
+    # ---- Wi-Fi switched off: the question at the start, and the Receive page when it drops later
+    wf = os.path.join(ROOT, "shots-wifi.wifi"); open(wf, "w").write("off\n")
+    V = Vita("shots-wifi", 53322, 53352, config={"alias": "Vita-7F3A", "screensaver": 0}, ready=False,
+             env=dict(env, LS_WIFI_FILE=wf, LS_WIFI_TURNON="nojoin", LS_WIFI_TIMEOUT_MS="7000"),
+             extra=["--dump-ppm", os.path.join(ROOT, "shots-wifi", "screen.ppm")])
+    VITAS.append(V)
+    expect(V, "Wi-Fi is turned off", "wifi question", 8); snap(V, "wifi-ask", 0.4)
+    V.keys("cross"); expect(V, "Turning on Wi-Fi...", "wifi connecting", 5); snap(V, "wifi-connecting", 0.5)
+    expect(V, "Wi-Fi could not be turned on", "wifi fallback", 12); snap(V, "wifi-failed", 0.4)
+    open(wf, "w").write("on\n"); expect(V, "This device", "app after wifi", 8)
+    time.sleep(0.8); V.keys("right")
+    open(wf, "w").write("off\n"); expect(V, "Wi-Fi not connected", "wifi dropped", 6); snap(V, "wifi-lost", 0.5)
+    V.keys("triangle"); expect(V, "Turning on Wi-Fi...", "wifi connecting in app", 4); snap(V, "wifi-lost-connecting", 0.5)
+    V.stop(); VITAS.remove(V)
     # ---- the OLED theme
     V = new_vita("shots-oled", 53318, {"alias": "Vita-7F3A", "screensaver": 0, "theme": 1, "autoAccept": 2, "receiveDir": RECV}, browse=PICS)
     receive_files(V, {"holiday-photo.jpg": rnd(1_200_000, 4)}, alias="Clever Pear")
@@ -2307,6 +2383,623 @@ def test_shots():
     snap(V, "screensaver", 0.3)
     V.stop(); VITAS.remove(V)
     for r in peers: r.stop()
+
+
+def tree_of(d):
+    """{relative path: sha256 of the content, or None for a folder} for everything below d."""
+    out = {}
+    for root, dirs, files in os.walk(d):
+        for n in dirs: out[os.path.relpath(os.path.join(root, n), d) + "/"] = None
+        for n in files: out[os.path.relpath(os.path.join(root, n), d)] = sha(open(os.path.join(root, n), "rb").read())
+    return out
+
+def test_move():
+    print("== MOVE / COPY: to another folder (rename) and to another card (copy, then remove the original); copy keeps the original")
+    BTN = dict(START=1, SELECT=2, TRI=4, O=8, X=16, SQ=32)
+    recv = os.path.join(ROOT, "move", "received")
+    os.makedirs(os.path.join(recv, "dest")); os.makedirs(os.path.join(recv, "src", "inner"))
+    A, B = rnd(5000, 201), rnd(7000, 202)
+    open(os.path.join(recv, "a.bin"), "wb").write(A)
+    open(os.path.join(recv, "b.bin"), "wb").write(B)
+    open(os.path.join(recv, "c.txt"), "w").write("see")
+    open(os.path.join(recv, "src", "f1.bin"), "wb").write(rnd(300, 203))
+    open(os.path.join(recv, "src", "inner", "f2.bin"), "wb").write(rnd(900, 204))
+    dest = os.path.join(recv, "dest")
+    V = Vita("move", 53620, 53621, config={"alias": "Mover", "screensaver": 0})
+    VITAS.append(V)
+    V.keys("r", "r", "r")
+    check("Files tab opens", V.wait_screen("tab=Files screen=files", 6) and "dest/" in V.screen(), V.screen())
+
+    def open_folder(d, name):
+        files_cursor(V, d, name); V.keys("cross")
+
+    # ---- one file into a folder
+    files_cursor(V, recv, "a.bin")
+    V.keys("select"); V.wait_screen("Options", 5)
+    check("the options menu offers Move for the highlighted entry", any(t.startswith("Move a.bin") for t in V.menu_items()), V.menu_items())
+    V.menu_pick("Move a.bin")
+    check("'Move' marks the item and says what to do next", V.wait_screen("Moving a.bin", 5) and V.wait_screen("Moving 1 item", 5), V.screen())
+    check("the header offers [Move here] for touch", V.find_hit("K", BTN["TRI"], False) is not None and "Move here" in V.screen(), V.hits()[:12])
+    check("a marked row is still listed", "a.bin" in V.screen(), V.screen())
+    open_folder(recv, "dest")
+    check("inside the destination the hint bar says Move here", V.wait_screen("Move here", 5) and "dest" in V.screen()[:200], V.screen())
+    V.keys("triangle")
+    check("[TRIANGLE] moves the file here", wait_for(lambda: os.path.exists(os.path.join(dest, "a.bin")) and not os.path.exists(os.path.join(recv, "a.bin")), 8), os.listdir(recv))
+    check("... with its content intact", open(os.path.join(dest, "a.bin"), "rb").read() == A)
+    check("... and says so, and the marking is over", V.wait_screen("Moved 1 item", 5) and "Moving" not in V.screen().split("Moved 1 item")[0][-200:], V.screen())
+    V.keys("circle"); V.wait_screen("dest/", 5)
+
+    # ---- two ticked items at once
+    files_cursor(V, recv, "b.bin")
+    V.keys("square", "down", "square")
+    check("two items ticked", V.wait_screen("2 selected", 5), V.screen())
+    V.keys("select"); V.wait_screen("Options", 5)
+    V.menu_pick("Move the 2 ticked")
+    check("Move uses the ticked items and unticks them", V.wait_screen("Moving 2 items", 5) and "[x]" not in V.screen(), V.screen())
+    open_folder(recv, "dest")
+    V.wait_screen("Move here", 5)
+    V.keys("triangle")
+    check("both items arrive", wait_for(lambda: all(os.path.exists(os.path.join(dest, n)) for n in ("b.bin", "c.txt")) and not os.path.exists(os.path.join(recv, "b.bin")), 8), os.listdir(dest))
+    check("... b.bin intact", open(os.path.join(dest, "b.bin"), "rb").read() == B)
+    V.wait_screen("Moved 2 items", 5)
+    V.keys("circle"); V.wait_screen("dest/", 5)
+
+    # ---- a name that exists is never overwritten
+    open(os.path.join(recv, "c.txt"), "w").write("a different c")
+    V.keys("r"); time.sleep(0.4); V.keys("l"); V.wait_screen("tab=Files screen=files", 5)       # (the folder is listed again when the tab is opened)
+    files_cursor(V, recv, "c.txt")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move c.txt")
+    V.wait_screen("Moving c.txt", 5)
+    open_folder(recv, "dest"); V.wait_screen("Move here", 5)
+    V.keys("triangle")
+    check("an existing name is reported", V.wait_screen("c.txt exists already", 6), V.screen())
+    check("... and nothing was overwritten or lost", open(os.path.join(dest, "c.txt")).read() == "see" and open(os.path.join(recv, "c.txt")).read() == "a different c")
+    V.keys("circle"); V.wait_screen("dest/", 5)
+
+    # ---- a folder cannot go into itself; a file cannot be moved into the folder it is in
+    files_cursor(V, recv, "src")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move src")
+    V.wait_screen("Moving src", 5)
+    V.keys("cross"); V.wait_screen("f1.bin", 5)
+    V.keys("triangle")
+    check("a folder cannot be moved into itself", V.wait_screen("cannot go into itself", 6) and os.path.exists(os.path.join(recv, "src", "f1.bin")), V.screen())
+    files_cursor(V, os.path.join(recv, "src"), "f1.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move f1.bin")
+    V.wait_screen("Moving f1.bin", 5)
+    V.keys("triangle")
+    check("moving into the folder it is already in does nothing", V.wait_screen("already in this folder", 6) and os.path.exists(os.path.join(recv, "src", "f1.bin")), V.screen())
+
+    # ---- cancel from the menu
+    files_cursor(V, os.path.join(recv, "src"), "f1.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move f1.bin")
+    V.wait_screen("Moving f1.bin", 5)
+    V.keys("select"); V.wait_screen("Options", 5)
+    items = V.menu_items()
+    check("with a move pending the menu offers Move here and Cancel", items[:2] == ["Move here (1 item)", "Cancel the move"], items)
+    V.menu_pick("Cancel the move")
+    check("cancelling the move forgets it", V.wait_screen("Move cancelled", 5) and "Moving 1 item" not in V.screen(), V.screen())
+
+    # ---- a whole folder with sub-folders
+    V.keys("circle"); V.wait_screen("dest/", 5)
+    before = tree_of(os.path.join(recv, "src"))
+    files_cursor(V, recv, "src")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move src")
+    V.wait_screen("Moving src", 5)
+    open_folder(recv, "dest"); V.wait_screen("Move here", 5)
+    V.keys("triangle")
+    check("a folder moves with everything in it", wait_for(lambda: not os.path.exists(os.path.join(recv, "src")) and tree_of(os.path.join(dest, "src")) == before, 8), (before, tree_of(dest)))
+    V.stop(); VITAS.remove(V)
+
+    # ---- touch: the [Move here] button of the header
+    recv_t = os.path.join(ROOT, "move-touch", "received")
+    os.makedirs(os.path.join(recv_t, "box"))
+    open(os.path.join(recv_t, "t.bin"), "wb").write(rnd(100, 205))
+    V = Vita("move-touch", 53624, 53625, config={"alias": "Toucher", "screensaver": 0})
+    VITAS.append(V)
+    V.keys("r", "r", "r"); V.wait_screen("tab=Files screen=files", 6)
+    files_cursor(V, recv_t, "t.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move t.bin")
+    V.wait_screen("Moving t.bin", 5)
+    files_cursor(V, recv_t, "box"); V.keys("cross"); V.wait_screen("Move here", 5)
+    check("the header has a touch button for Move here", V.find_hit("K", BTN["TRI"], False) is not None, V.hits()[:12])
+    V.tap_hit("K", BTN["TRI"], False)
+    check("tapping it moves the file", wait_for(lambda: os.path.exists(os.path.join(recv_t, "box", "t.bin")), 8), os.listdir(recv_t))
+    V.stop(); VITAS.remove(V)
+
+    # ---- COPY: the original always stays; a name that exists gets "(1)"
+    recv_d = os.path.join(ROOT, "move-dup", "received")
+    os.makedirs(os.path.join(recv_d, "dest")); os.makedirs(os.path.join(recv_d, "tree", "sub"))
+    CA = rnd(4000, 211)
+    open(os.path.join(recv_d, "a.bin"), "wb").write(CA)
+    open(os.path.join(recv_d, "c.txt"), "w").write("source c")
+    open(os.path.join(recv_d, "dest", "c.txt"), "w").write("dest c")
+    open(os.path.join(recv_d, "tree", "t1.bin"), "wb").write(rnd(150_000, 212))
+    open(os.path.join(recv_d, "tree", "sub", "t2.bin"), "wb").write(rnd(1234, 213))
+    dd = os.path.join(recv_d, "dest")
+    V = Vita("move-dup", 53630, 53631, config={"alias": "Duplicator", "screensaver": 0})
+    VITAS.append(V)
+    V.keys("r", "r", "r"); V.wait_screen("tab=Files screen=files", 6)
+    files_cursor(V, recv_d, "a.bin")
+    V.keys("select"); V.wait_screen("Options", 5)
+    check("the options menu offers Copy as well as Move", any(t.startswith("Copy a.bin") for t in V.menu_items()) and any(t.startswith("Move a.bin") for t in V.menu_items()), V.menu_items())
+    V.menu_pick("Copy a.bin")
+    check("'Copy' marks the item", V.wait_screen("Copying a.bin", 5) and V.wait_screen("Copying 1 item", 5), V.screen())
+    open_d = lambda name: (files_cursor(V, recv_d, name), V.keys("cross"))
+    open_d("dest"); V.wait_screen("Copy here", 5)
+    check("the header button and the hint bar say Copy here", V.find_hit("K", BTN["TRI"], False) is not None and V.find_hit("K", BTN["TRI"], True) is not None, V.hits()[:12])
+    V.keys("triangle")
+    check("the copy arrives and the original stays", wait_for(lambda: os.path.exists(os.path.join(dd, "a.bin")) and os.path.exists(os.path.join(recv_d, "a.bin")), 8), (os.listdir(dd), os.listdir(recv_d)))
+    check("... with its content intact", open(os.path.join(dd, "a.bin"), "rb").read() == CA)
+    check("... and says so", V.wait_screen("Copied 1 item", 6), V.screen())
+    V.keys("circle"); V.wait_screen("dest/", 5)
+
+    files_cursor(V, recv_d, "c.txt")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Copy c.txt")
+    V.wait_screen("Copying c.txt", 5)
+    open_d("dest"); V.wait_screen("Copy here", 5)
+    V.keys("triangle")
+    check("a name that exists gets a new one: c (1).txt", wait_for(lambda: os.path.exists(os.path.join(dd, "c (1).txt")), 8) and open(os.path.join(dd, "c (1).txt")).read() == "source c", os.listdir(dd))
+    check("... and the file that was there is untouched", open(os.path.join(dd, "c.txt")).read() == "dest c")
+    V.wait_screen("Copied 1 item", 8)
+    V.keys("circle"); V.wait_screen("dest/", 5)
+
+    files_cursor(V, recv_d, "a.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Copy a.bin")
+    V.wait_screen("Copying a.bin", 5)
+    V.keys("select"); V.wait_screen("Options", 5)
+    items = V.menu_items()
+    check("with a copy pending the menu says Copy here / Cancel the copy", items[:2] == ["Copy here (1 item)", "Cancel the copy"], items)
+    V.menu_pick("Copy here")
+    check("copying into the same folder makes 'a (1).bin'", wait_for(lambda: os.path.exists(os.path.join(recv_d, "a (1).bin")) and open(os.path.join(recv_d, "a (1).bin"), "rb").read() == CA, 8), os.listdir(recv_d))
+    V.wait_screen("Copied 1 item", 8)
+
+    before = tree_of(os.path.join(recv_d, "tree"))
+    files_cursor(V, recv_d, "tree")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Copy tree")
+    V.wait_screen("Copying tree", 5)
+    open_d("dest"); V.wait_screen("Copy here", 5)
+    V.keys("triangle")
+    check("a folder is copied with everything in it, the original stays", wait_for(lambda: tree_of(os.path.join(dd, "tree")) == before and tree_of(os.path.join(recv_d, "tree")) == before, 8), (before, tree_of(dd)))
+    V.wait_screen("Copied 1 item", 8)
+    V.keys("circle"); V.wait_screen("dest/", 5)
+
+    files_cursor(V, recv_d, "tree")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Copy tree")
+    V.wait_screen("Copying tree", 5)
+    V.keys("cross"); V.wait_screen("t1.bin", 5)
+    V.keys("triangle")
+    check("a folder cannot be copied into itself", V.wait_screen("cannot be copied into itself", 6) and tree_of(os.path.join(recv_d, "tree")) == before, V.screen())
+    V.stop(); VITAS.remove(V)
+
+    # ---- another card: the rename fails, so the data is copied and then the original is removed
+    recv2 = os.path.join(ROOT, "move-copy", "received")
+    os.makedirs(os.path.join(recv2, "dest")); os.makedirs(os.path.join(recv2, "tree", "sub", "deep")); os.makedirs(os.path.join(recv2, "tree", "emptydir"))
+    open(os.path.join(recv2, "tree", "one.bin"), "wb").write(rnd(200_000, 206))
+    open(os.path.join(recv2, "tree", "sub", "two.bin"), "wb").write(rnd(70_000, 207))
+    open(os.path.join(recv2, "tree", "sub", "deep", "three.bin"), "wb").write(rnd(1, 208))
+    open(os.path.join(recv2, "tree", "zero.bin"), "wb").write(b"")
+    big = rnd(2_500_000, 209)
+    open(os.path.join(recv2, "big.bin"), "wb").write(big)
+    V = Vita("move-copy", 53626, 53627, config={"alias": "Copier", "screensaver": 0}, env={"LS_FAIL_RENAME": "1", "LS_SLOW_MOVE_MS": "60"})
+    VITAS.append(V)
+    V.keys("r", "r", "r"); V.wait_screen("tab=Files screen=files", 6)
+    d2 = os.path.join(recv2, "dest")
+    before = tree_of(os.path.join(recv2, "tree"))
+    files_cursor(V, recv2, "tree")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move tree")
+    V.wait_screen("Moving tree", 5)
+    open_folder(recv2, "dest"); V.wait_screen("Move here", 5)
+    V.keys("triangle")
+    check("between cards a progress dialog shows the copy", V.wait_screen("screen=move", 6) and V.wait_screen("Copied to the other card first", 3) and " %" in V.screen(), V.screen())
+    check("the folder arrives complete (sub-folders, an empty folder, an empty file)", wait_for(lambda: tree_of(os.path.join(d2, "tree")) == before and not os.path.exists(os.path.join(recv2, "tree")), 20), (before, tree_of(d2)))
+    check("the dialog closes and reports", V.wait_screen("Moved 1 item", 8) and "screen=files" in V.screen(), V.screen())
+    V.keys("circle"); V.wait_screen("dest/", 5)
+
+    # ---- cancel in the middle of a big copy: the original stays, the partial copy goes away
+    files_cursor(V, recv2, "big.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move big.bin")
+    V.wait_screen("Moving big.bin", 5)
+    open_folder(recv2, "dest"); V.wait_screen("Move here", 5)
+    V.keys("triangle")
+    V.wait_screen("screen=move", 6)
+    time.sleep(0.6)
+    V.keys("circle")
+    check("cancelling reports it", V.wait_screen("Move cancelled", 8) and "screen=files" in V.screen(), V.screen())
+    check("the original is untouched", os.path.exists(os.path.join(recv2, "big.bin")) and open(os.path.join(recv2, "big.bin"), "rb").read() == big)
+    check("the half-written copy is removed", not os.path.exists(os.path.join(d2, "big.bin")), os.listdir(d2))
+
+    # ---- and again, to the end
+    V.keys("circle"); V.wait_screen("dest/", 5)
+    files_cursor(V, recv2, "big.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move big.bin")
+    V.wait_screen("Moving big.bin", 5)
+    open_folder(recv2, "dest"); V.wait_screen("Move here", 5)
+    V.keys("triangle")
+    check("a big file is copied completely and the original removed", wait_for(lambda: os.path.exists(os.path.join(d2, "big.bin")) and not os.path.exists(os.path.join(recv2, "big.bin")), 30) and open(os.path.join(d2, "big.bin"), "rb").read() == big, os.listdir(d2))
+    check("the log has the summary", "move: 1 done, 0 failed" in V.log(), V.log()[-400:])
+    V.wait_screen("Moved 1 item", 8)
+
+    # ---- a big COPY can be cancelled too; the original is never touched
+    big2 = rnd(2_500_000, 214)
+    open(os.path.join(recv2, "big2.bin"), "wb").write(big2)
+    V.keys("circle"); V.wait_screen("dest/", 5)
+    V.keys("r"); time.sleep(0.4); V.keys("l"); V.wait_screen("tab=Files screen=files", 5)          # (the folder is listed again when the tab is opened)
+    files_cursor(V, recv2, "big2.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Copy big2.bin")
+    V.wait_screen("Copying big2.bin", 5)
+    open_folder(recv2, "dest"); V.wait_screen("Copy here", 5)
+    V.keys("triangle")
+    check("the copy dialog says the originals stay", V.wait_screen("screen=move", 6) and V.wait_screen("The originals stay where they are", 3), V.screen())
+    time.sleep(0.6)
+    V.keys("circle")
+    check("cancelling a copy reports it", V.wait_screen("Copy cancelled", 8) and "screen=files" in V.screen(), V.screen())
+    check("... the original is there and the half-written copy is gone", open(os.path.join(recv2, "big2.bin"), "rb").read() == big2 and not os.path.exists(os.path.join(d2, "big2.bin")), os.listdir(d2))
+    V.keys("circle"); V.wait_screen("dest/", 5)
+    files_cursor(V, recv2, "big2.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Copy big2.bin")
+    V.wait_screen("Copying big2.bin", 5)
+    open_folder(recv2, "dest"); V.wait_screen("Copy here", 5)
+    V.keys("triangle")
+    check("a big copy completes and keeps the original", wait_for(lambda: os.path.exists(os.path.join(d2, "big2.bin")) and open(os.path.join(d2, "big2.bin"), "rb").read() == big2 and os.path.exists(os.path.join(recv2, "big2.bin")), 30), os.listdir(d2))
+    V.wait_screen("Copied 1 item", 8)
+    check("the log tells copy and move apart", wait_for(lambda: "copy: 1 done, 0 failed" in V.log(), 5), V.log()[-500:])
+    V.stop(); VITAS.remove(V)
+
+    # ---- not enough room on the other card
+    recv3 = os.path.join(ROOT, "move-full", "received")
+    os.makedirs(os.path.join(recv3, "dest"))
+    open(os.path.join(recv3, "huge.bin"), "wb").write(rnd(500_000, 210))
+    V = Vita("move-full", 53628, 53629, config={"alias": "Full", "screensaver": 0}, env={"LS_FAIL_RENAME": "1"}, extra=["--free-space", "100000"])
+    VITAS.append(V)
+    V.keys("r", "r", "r"); V.wait_screen("tab=Files screen=files", 6)
+    files_cursor(V, recv3, "huge.bin")
+    V.keys("select"); V.wait_screen("Options", 5); V.menu_pick("Move huge.bin")
+    V.wait_screen("Moving huge.bin", 5)
+    open_folder(recv3, "dest"); V.wait_screen("Move here", 5)
+    V.keys("triangle")
+    check("not enough free space is reported before anything is copied", V.wait_screen("Not enough free space", 6) and os.path.exists(os.path.join(recv3, "huge.bin")) and not os.listdir(os.path.join(recv3, "dest")), V.screen())
+    V.stop(); VITAS.remove(V)
+    check("no sanitizer errors during the move tests", not sanitizer_clean([v for v in ALL_VITAS if v.name.startswith("move")]), sanitizer_clean([v for v in ALL_VITAS if v.name.startswith("move")]))
+
+
+def test_wifi():
+    print("== WI-FI: switched off at the start (question on the boot screen) and lost while the app runs (shown on the page itself)")
+    BTN = dict(START=1, SELECT=2, TRI=4, O=8, X=16, SQ=32)
+    def wf(name):
+        p = os.path.join(ROOT, name + ".wifi"); open(p, "w").write("off\n"); return p
+    def gone(V, secs=6): return wait_for(lambda: V.proc.poll() is not None, secs)
+
+    # ---- 1. off at the start: ask, switch on, carry on
+    f = wf("w1")
+    V = Vita("w1", 53640, 53641, config={"alias": "WifiOne", "screensaver": 0}, env={"LS_WIFI_FILE": f, "LS_WIFI_DELAY_MS": "1500"}, ready=False)
+    VITAS.append(V)
+    check("Wi-Fi off at the start: the question appears", V.wait_screen("Wi-Fi is turned off", 8), V.screen())
+    scr = V.screen()
+    check("it says what Wi-Fi is needed for - in one short line", "VitaSend needs Wi-Fi to find other devices." in scr and "Settings > Network" not in scr and "Waiting for Wi-Fi" not in scr, scr)
+    check("it offers 'Turn on Wi-Fi' (X) and 'Quit' (O), also on the hint bar", "Turn on Wi-Fi" in scr and "Quit" in scr and V.find_hit("K", BTN["X"]) and V.find_hit("K", BTN["O"]), V.hits())
+    time.sleep(0.5)
+    check("nothing happens by itself", V.has("Wi-Fi is turned off") and "switch-on requested" not in V.log(), V.log()[-300:])
+    check("the app does not start without Wi-Fi", "This device" not in V.screen())
+    V.tap_hit("K", BTN["X"], False)
+    check("a tap on the X button starts switching it on", V.wait_screen("Turning on Wi-Fi...", 5) and V.has("Connecting to your network"), V.screen())
+    check("while connecting: only Cancel is offered", V.has("Cancel") and not V.has("Turn on Wi-Fi") and V.find_hit("K", BTN["O"]) is not None, V.screen())
+    check("the app starts by itself once the network is there", V.wait_screen("This device", 10) and V.has("Ready"), V.screen())
+    log = V.log()
+    check("the log tells what happened", "Wi-Fi: switch-on requested" in log and "Wi-Fi: connected" in log and "Wi-Fi connected, IP" in log, log[-500:])
+    V.stop(); VITAS.remove(V)
+
+    # ---- 2. cancel while connecting, then quit with O
+    f = wf("w2")
+    V = Vita("w2", 53642, 53643, config={"alias": "WifiTwo", "screensaver": 0}, env={"LS_WIFI_FILE": f, "LS_WIFI_TURNON": "nojoin", "LS_WIFI_TIMEOUT_MS": "60000"}, ready=False)
+    VITAS.append(V)
+    V.wait_screen("Wi-Fi is turned off", 8)
+    V.keys("cross")
+    check("X switches it on", V.wait_screen("Turning on Wi-Fi...", 5), V.screen())
+    V.keys("circle")
+    check("O while connecting cancels and goes back to the question", V.wait_screen("Wi-Fi is turned off", 5) and "waiting cancelled" in V.log(), V.screen())
+    check("... and the app is still waiting (not quit)", V.proc.poll() is None)
+    V.keys("circle")
+    check("O on the question quits the app", gone(V, 6), V.proc.poll())
+    VITAS.remove(V)
+
+    # ---- 3. the system refuses: fall back to the Vita settings; the app keeps waiting and continues by itself
+    f = wf("w3")
+    V = Vita("w3", 53644, 53645, config={"alias": "WifiThree", "screensaver": 0, "wifiSettingsUri": "settings_dlg:test::page"}, env={"LS_WIFI_FILE": f, "LS_WIFI_TURNON": "fail"}, ready=False)
+    VITAS.append(V)
+    V.wait_screen("Wi-Fi is turned off", 8)
+    V.keys("cross")
+    check("refused: 'could not be turned on' with the way out", V.wait_screen("Wi-Fi could not be turned on", 5) and V.has("Settings > Network") and V.has("continues by itself") and V.has("Try again"), V.screen())
+    check("the refusal and its reason are in the log", "could not be switched on from the app (not supported (test))" in V.log(), V.log()[-300:])
+    V.keys("cross")
+    time.sleep(0.4)
+    check("'Try again' asks again", V.log().count("could not be switched on from the app") >= 2, V.log()[-400:])
+    check("the 'could not be turned on' window offers TRIANGLE: Wi-Fi settings", V.has("Wi-Fi settings") and V.find_hit("K", BTN["TRI"], False) is not None, V.screen())
+    V.keys("triangle")
+    check("TRIANGLE opens the Wi-Fi settings, at the address from config.json (wifiSettingsUri)", wait_for(lambda: "opening the Wi-Fi settings" in V.log() and "address settings_dlg:test::page" in V.log(), 4), V.log()[-300:])
+    open(f, "w").write("on\n")                              # the user turns it on in the Vita settings
+    check("the app continues by itself when Wi-Fi comes", V.wait_screen("This device", 8), V.screen())
+    V.stop(); VITAS.remove(V)
+
+    # ---- 3b. the Wi-Fi settings cannot be opened: the window says so and stays
+    f = wf("w8")
+    V = Vita("w8", 53654, 53655, config={"alias": "WifiEight", "screensaver": 0}, env={"LS_WIFI_FILE": f, "LS_WIFI_TURNON": "fail", "LS_WIFI_SETTINGS_FAIL": "1"}, ready=False)
+    VITAS.append(V)
+    V.wait_screen("Wi-Fi is turned off", 8)
+    V.keys("cross")
+    V.wait_screen("Wi-Fi could not be turned on", 5)
+    V.keys("triangle")
+    check("settings cannot be opened: a note in the window, the app stays", V.wait_screen("could not be opened from here", 4) and V.has("Wi-Fi could not be turned on"), V.screen())
+    check("... and the log says so", "could not open the Wi-Fi settings" in V.log(), V.log()[-300:])
+    V.keys("circle")
+    check("O still quits", gone(V, 6))
+    VITAS.remove(V)
+
+    # ---- 4. accepted, but no network ever comes: after the waiting time, the same fallback
+    f = wf("w4")
+    V = Vita("w4", 53646, 53647, config={"alias": "WifiFour", "screensaver": 0}, env={"LS_WIFI_FILE": f, "LS_WIFI_TURNON": "nojoin", "LS_WIFI_TIMEOUT_MS": "1500"}, ready=False)
+    VITAS.append(V)
+    V.wait_screen("Wi-Fi is turned off", 8)
+    V.keys("cross")
+    check("accepted but no network in time: the fallback appears", V.wait_screen("Turning on Wi-Fi...", 3) and V.wait_screen("Wi-Fi could not be turned on", 8), V.screen())
+    check("... and the log says why", "no network address after the switch-on request" in V.log(), V.log()[-300:])
+    V.keys("start")
+    check("START quits from any state", gone(V, 6))
+    VITAS.remove(V)
+
+    # ---- 4b. "Continue without Wi-Fi": the app starts offline (Files tab etc.); the server starts when Wi-Fi comes
+    f = wf("w7")
+    V = Vita("w7", 53652, 53653, config={"alias": "WifiSeven", "screensaver": 0}, env={"LS_WIFI_FILE": f, "LS_WIFI_TURNON": "fail"}, ready=False)
+    VITAS.append(V)
+    V.wait_screen("Wi-Fi is turned off", 8)
+    check("the question offers 'Continue without Wi-Fi' (SQUARE)", V.has("Continue without Wi-Fi") and V.find_hit("K", BTN["SQ"], False) is not None, V.screen())
+    V.keys("cross")
+    V.wait_screen("Wi-Fi could not be turned on", 5)
+    check("... and so does the 'could not be turned on' dialog", V.has("Continue without Wi-Fi") and V.has("Try again") and V.find_hit("K", BTN["SQ"], False) is not None, V.screen())
+    V.keys("square")
+    check("Square starts the app without Wi-Fi", V.wait_screen("This device", 6) and V.has("No Wi-Fi") and V.has("Wi-Fi not connected") and V.has("Turn on Wi-Fi"), V.screen())
+    check("... without a server and without a leftover failure message", "continuing without Wi-Fi" in V.log() and "HTTPS server listening" not in V.log() and "use Settings" not in V.screen(), V.log()[-300:])
+    V.keys("r", "r", "r")
+    check("the other tabs work offline (Files)", V.wait_screen("tab=Files screen=files", 5), V.screen())
+    V.keys("l", "l", "l")
+    V.wait_screen("tab=Receive", 5)
+    open(f, "w").write("on\n")                              # Wi-Fi comes (the user switched it on in the Vita settings)
+    check("when Wi-Fi comes, the server starts and the card is 'Ready'", V.wait_screen("Ready", 8) and wait_for(lambda: "HTTPS server listening" in V.log(), 5), V.log()[-400:])
+    st, body = raw_request(V.port, "GET", "/api/localsend/v2/info")
+    check("... and other devices can reach it", st == 200 and b"WifiSeven" in body, (st, body[:100]))
+    V.stop(); VITAS.remove(V)
+
+    # ---- 5. Wi-Fi lost while the app runs: shown on the Receive page, no popup; switched on again from there
+    f = os.path.join(ROOT, "w5.wifi")
+    V = Vita("w5", 53648, 53649, config={"alias": "WifiFive", "screensaver": 0}, env={"LS_WIFI_FILE": f, "LS_WIFI_DELAY_MS": "1500"})
+    VITAS.append(V)
+    check("Wi-Fi on: nothing about Wi-Fi is shown", V.has("Ready") and not V.has("No Wi-Fi") and not V.has("Turn on Wi-Fi"), V.screen())
+    open(f, "w").write("off\n")
+    check("Wi-Fi drops: the card says so ('No Wi-Fi', 'Wi-Fi not connected')", V.wait_screen("Wi-Fi not connected", 6) and V.has("No Wi-Fi") and not V.has("Ready"), V.screen())
+    check("... with a 'Turn on Wi-Fi' button, and no popup", V.has("Turn on Wi-Fi") and "Wi-Fi is turned off" not in V.screen() and "screen=receive" in V.screen(), V.screen())
+    check("... and the hint bar offers it too (also while the tab list has the focus)", V.screen().count("Turn on Wi-Fi") >= 2, V.screen())
+    V.keys("triangle")
+    check("Triangle starts it: 'Connecting' and 'Turning on Wi-Fi...'", V.wait_screen("Turning on Wi-Fi...", 4) and V.has("Connecting"), V.screen())
+    check("... the button is gone while it connects", wait_for(lambda: V.has("Turning on Wi-Fi...") and not V.has("Turn on Wi-Fi") and not V.has("Wi-Fi not connected"), 3) or V.has("Ready"), V.screen())
+    check("when the network is back the card is 'Ready' again", V.wait_screen("Ready", 10) and not V.has("Wi-Fi not connected") and not V.has("Turning on Wi-Fi"), V.screen())
+    check("the log has the whole story", "Wi-Fi lost" in V.log() and "switch-on requested" in V.log() and "Wi-Fi address is now" in V.log(), V.log()[-500:])
+
+    # on another page the sidebar row is a button too (touch)
+    open(f, "w").write("off\n")
+    V.wait_screen("Wi-Fi not connected", 6)
+    V.keys("r")
+    V.wait_screen("tab=Send", 4)
+    side = [h for h in V.hits() if h[0] == "C" and int(h[1]) == 8 and int(h[2]) > 400]
+    check("the sidebar row is tappable", len(side) == 1, V.hits())
+    if side:
+        V.tap(int(side[0][1]) + 40, int(side[0][2]) + 15)
+        check("a tap on it switches Wi-Fi on", wait_for(lambda: V.log().count("switch-on requested") >= 2, 5) and V.has("tab=Send"), V.log()[-300:])
+    check("... and it comes back", wait_for(lambda: V.log().count("Wi-Fi address is now") >= 2, 10), V.log()[-400:])
+    V.keys("l"); V.wait_screen("tab=Receive", 4)
+    check("the Receive page is 'Ready' again", V.wait_screen("Ready", 5))
+
+    # refused in the app: say so on the card
+    f2 = os.path.join(ROOT, "w6.wifi")
+    V.stop(); VITAS.remove(V)
+    V = Vita("w6", 53650, 53651, config={"alias": "WifiSix", "screensaver": 0}, env={"LS_WIFI_FILE": f2, "LS_WIFI_TURNON": "fail"})
+    VITAS.append(V)
+    open(f2, "w").write("off\n")
+    V.wait_screen("Wi-Fi not connected", 6)
+    V.keys("triangle")
+    check("refused in the app: the card points to the Vita settings", V.wait_screen("use Settings > Network", 4) and V.has("No Wi-Fi"), V.screen())
+    check("... its button now says 'Wi-Fi settings' and the hint bar offers TRIANGLE", V.has("Wi-Fi settings"), V.screen())
+    V.keys("triangle")
+    check("TRIANGLE on the card opens the Wi-Fi settings (built-in address when config.json has none)", wait_for(lambda: "opening the Wi-Fi settings" in V.log() and "address default" in V.log(), 4), V.log()[-300:])
+    open(f2, "w").write("on\n")
+    check("... and recovers by itself when Wi-Fi comes back", V.wait_screen("Ready", 8), V.screen())
+    V.stop(); VITAS.remove(V)
+    bad = sanitizer_clean([v for v in ALL_VITAS if re.match(r"w\d$", v.name)])
+    check("no sanitizer errors during the Wi-Fi tests", not bad, bad)
+
+def make_pictures(d):
+    """Test pictures: a 4-colour JPEG, a PNG with a transparent half, a BMP, a JPEG with EXIF orientation 6, and too-big ones."""
+    from PIL import Image
+    os.makedirs(d, exist_ok=True)
+    q = Image.new("RGB", (640, 480))
+    for x in range(640):
+        for y in range(480):
+            q.putpixel((x, y), ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0))[(x >= 320) + 2 * (y >= 240)])
+    q.save(os.path.join(d, "pic1.jpg"), quality=95, subsampling=0)
+    a = Image.new("RGBA", (200, 100), (0, 0, 0, 0))
+    for x in range(100):
+        for y in range(100): a.putpixel((x, y), (255, 0, 255, 255))
+    a.save(os.path.join(d, "pic2.png"))
+    Image.new("RGB", (120, 80), (0, 200, 200)).save(os.path.join(d, "pic3.bmp"))
+    r = Image.new("RGB", (300, 200), (255, 0, 0))            # stored: red left half, blue right half; orientation 6 = shown turned 90 degrees clockwise
+    for x in range(150, 300):
+        for y in range(200): r.putpixel((x, y), (0, 0, 255))
+    ex = Image.Exif(); ex[0x0112] = 6
+    r.save(os.path.join(d, "rot.jpg"), quality=95, subsampling=0, exif=ex)
+    Image.new("RGB", (4000, 3000), (10, 20, 30)).save(os.path.join(d, "huge.jpg"))             # 12 million pixels: refused
+    Image.new("RGB", (1800, 1500), (10, 20, 30)).save(os.path.join(d, "prog.jpg"), progressive=True)   # progressive, 2.7 million: refused
+    open(os.path.join(d, "bad.jpg"), "wb").write(b"this is not a picture")
+
+def test_view():
+    print("== VIEW: opening pictures and text files from the Files tab; X opens, SQUARE ticks, queues, slim options menu")
+    from PIL import Image
+    BTN = dict(START=1, SELECT=2, TRI=4, O=8, X=16, SQ=32)
+    recv = os.path.join(ROOT, "view", "received")
+    make_pictures(recv)
+    open(os.path.join(recv, "notes.txt"), "w").write("\n".join(f"line {i:03d} of the notes" for i in range(1, 121)) + "\n")
+    open(os.path.join(recv, "long.md"), "w").write("# Title\r\n" + "word " * 400 + "\r\n\ttabbed line \u00e9\u00e8\r\n")
+    open(os.path.join(recv, "blob.txt"), "wb").write(b"abc\x00def")
+    open(os.path.join(recv, "data.bin"), "wb").write(rnd(300, 301))
+    make_vpk(os.path.join(recv, "AppOne.vpk"), title="App One", tid="APPO00001", ver="01.00")
+    make_vpk(os.path.join(recv, "AppTwo.vpk"), title="App Two", tid="APPT00002", ver="02.00")
+    ppm = os.path.join(ROOT, "view", "screen.ppm")
+    V = Vita("view", 53670, 53671, config={"alias": "Viewer", "screensaver": 0}, extra=["--dump-ppm", ppm])
+    VITAS.append(V)
+    V.keys("r", "r", "r")
+    check("Files tab opens", V.wait_screen("tab=Files screen=files", 6) and "pic1.jpg" in V.screen(), V.screen())
+    def px(x, y):
+        time.sleep(0.5)
+        return Image.open(ppm).convert("RGB").getpixel((x, y))
+    def pxw(x, y, want):
+        """the pixel, waiting (the ppm dump is written at most every 250 ms) until it is near the wanted colour"""
+        c = px(x, y)
+        for _ in range(12):
+            if all(abs(a - b) < 30 for a, b in zip(c, want)): break
+            c = px(x, y)
+        return c
+    def close_view():
+        V.keys("circle"); return V.wait_screen("screen=files", 5)
+
+    # ---- the hint bar of the Files tab shows what X does for the highlighted entry
+    files_cursor(V, recv, "pic1.jpg")
+    check("on a picture the hint says X View, SQUARE Tick, TRIANGLE Send", V.has("View") and V.has("Tick") and V.has("Send") and not V.has("Tabs"), V.screen())
+    # ---- one picture
+    V.keys("cross")
+    check("X opens a picture in the viewer", V.wait_screen("screen=view", 5) and V.wait_screen("640 x 480", 6) and V.has("pic1.jpg"), V.screen())
+    scr = V.screen()
+    check("a single picture: only 'Close' on the hint bar", "Close" in scr and "Previous" not in scr, scr)
+    # shown at 608 x 456, centred in 960 x 456 below the 44 px bar: the quadrants are where they should be
+    ox, oy = (960 - 608) // 2, 44
+    cols = (pxw(ox + 100, oy + 100, (255, 0, 0)), pxw(ox + 500, oy + 100, (0, 255, 0)), pxw(ox + 100, oy + 350, (0, 0, 255)), pxw(ox + 500, oy + 350, (255, 255, 0)))
+    near = lambda c, t: all(abs(a - b) < 30 for a, b in zip(c, t))
+    check("the picture is drawn with the right colours in the right places", near(cols[0], (255, 0, 0)) and near(cols[1], (0, 255, 0)) and near(cols[2], (0, 0, 255)) and near(cols[3], (255, 255, 0)), cols)
+    check("the area around it is the background", sum(px(20, 300)) < 80, px(20, 300))
+    check("O closes it and the Files tab is back", close_view())
+    # ---- EXIF orientation
+    files_cursor(V, recv, "rot.jpg"); V.keys("cross")
+    check("a JPEG with EXIF orientation is shown upright (the size says 200 x 300)", V.wait_screen("200 x 300", 6), V.screen())
+    top, bottom = pxw(480, 44 + 60, (255, 0, 0)), pxw(480, 44 + 400, (0, 0, 255))
+    check("orientation 6: the stored left half (red) is now on top, the right half (blue) below", near(top, (255, 0, 0)) and near(bottom, (0, 0, 255)), (top, bottom))
+    close_view()
+    # ---- transparent PNG
+    files_cursor(V, recv, "pic2.png"); V.keys("cross")
+    V.wait_screen("200 x 100", 6)
+    left, right = px(480 - 150, 44 + 228), px(480 + 150, 44 + 228)
+    check("PNG: opaque part drawn, transparent part shows the background", near(left, (255, 0, 255)) and sum(right) < 80, (left, right))
+    close_view()
+    # ---- refused pictures
+    for name, why in (("huge.jpg", "too large"), ("prog.jpg", "too large"), ("bad.jpg", "Cannot show")):
+        files_cursor(V, recv, name); V.keys("cross")
+        check(f"{name}: a clear message instead of a crash ({why})", V.wait_screen(why, 8), V.screen())
+        close_view()
+    # ---- text
+    files_cursor(V, recv, "notes.txt")
+    check("on a text file the hint says X View", V.has("View"))
+    V.keys("cross")
+    check("X opens a text file", V.wait_screen("screen=view", 5) and V.wait_screen("line 001 of the notes", 6), V.screen())
+    check("the hint bar offers scrolling and Close", V.has("Scroll") and V.has("Close"), V.screen())
+    V.keys("down", "down", "down")
+    check("DOWN scrolls the text", wait_for(lambda: "line 001 of the notes" not in V.screen() and "line 004 of the notes" in V.screen(), 4), V.screen())
+    V.keys("right")
+    check("RIGHT scrolls a page", V.wait_screen("line 021 of the notes", 3), V.screen())
+    V.keys("down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
+    close_view()
+    files_cursor(V, recv, "long.md"); V.keys("cross")
+    check("a long line is wrapped", V.wait_screen("# Title", 6) and V.screen().count("word word word") >= 10, V.screen())
+    V.keys("right", "right")
+    check("tabs and CR/LF are handled, accents are shown", V.wait_screen("tabbed line", 4) and "\u00e9\u00e8" in V.screen() and "\r" not in V.screen(), V.screen())
+    close_view()
+    files_cursor(V, recv, "blob.txt"); V.keys("cross")
+    check("a file with binary data is refused as text", V.wait_screen("not a text file", 6), V.screen())
+    close_view()
+    # ---- a file that cannot be opened
+    files_cursor(V, recv, "data.bin")
+    check("on other files the hint has no X entry", not V.has("X  View") and not V.has("Install") and V.has("Tick"), V.screen())
+    V.keys("cross")
+    check("X on another file says so (and nothing opens)", V.wait_screen("cannot be opened here", 4) and V.has("screen=files"), V.screen())
+    # ---- SQUARE ticks
+    files_cursor(V, recv, "pic1.jpg")
+    V.keys("square")
+    check("SQUARE ticks (and X no longer ticks)", V.wait_screen("1 selected", 4), V.screen())
+    V.keys("square")
+    check("SQUARE again unticks", wait_for(lambda: "selected" not in V.screen(), 4), V.screen())
+    # ---- several pictures: a queue
+    for n in ("pic1.jpg", "pic2.png", "pic3.bmp"):
+        files_cursor(V, recv, n); V.keys("square")
+    check("three ticked", V.wait_screen("3 selected", 4), V.screen())
+    files_cursor(V, recv, "pic1.jpg")
+    check("with several ticked the hint says X View ticked", V.has("View ticked"), V.screen())
+    V.keys("cross")
+    check("X opens the ticked pictures as a queue", V.wait_screen("screen=view", 5) and V.wait_screen("640 x 480", 8) and V.has("1 / 3") and V.has("pic1.jpg"), V.screen())
+    check("the hint bar offers Previous / next", V.has("Previous") and V.has("Close"), V.screen())
+    V.keys("right")
+    check("RIGHT shows the next picture", V.wait_screen("200 x 100", 8) and V.has("2 / 3") and V.has("pic2.png"), V.screen())
+    V.keys("r")
+    check("R shows the next one", V.wait_screen("120 x 80", 8) and V.has("3 / 3") and V.has("pic3.bmp"), V.screen())
+    check("BMP is drawn", near(pxw(480, 44 + 228, (0, 200, 200)), (0, 200, 200)))
+    V.keys("right")
+    time.sleep(0.4)
+    check("at the end it stays on the last picture", V.has("3 / 3"))
+    V.keys("l", "left")
+    check("L and LEFT go back", V.wait_screen("640 x 480", 8) and V.has("1 / 3") and V.has("pic1.jpg"), V.screen())
+    V.tap(900, 250)
+    check("tapping the right part of the screen is 'next'", V.wait_screen("2 / 3", 6), V.screen())
+    close_view()
+    check("closing keeps the ticks", V.has("3 selected"), V.screen())
+    # ---- text and picture mixed in one queue
+    files_cursor(V, recv, "pic1.jpg"); V.keys("square")
+    files_cursor(V, recv, "pic2.png"); V.keys("square")
+    files_cursor(V, recv, "pic3.bmp"); V.keys("square")           # (untick the three)
+    files_cursor(V, recv, "notes.txt"); V.keys("square")
+    files_cursor(V, recv, "pic3.bmp"); V.keys("square")
+    V.wait_screen("2 selected", 4)
+    files_cursor(V, recv, "notes.txt")
+    V.keys("cross")
+    check("pictures and texts can be in one queue", V.wait_screen("line 001 of the notes", 8) and V.has("1 / 2") and V.has("notes.txt"), V.screen())
+    V.keys("r")                                                   # (LEFT/RIGHT page a text; R steps)
+    check("... the next one is the picture", V.wait_screen("120 x 80", 8) and V.has("2 / 2") and V.has("pic3.bmp"), V.screen())
+    close_view()
+    files_cursor(V, recv, "pic3.bmp"); V.keys("square"); files_cursor(V, recv, "notes.txt"); V.keys("square")
+    # ---- packages
+    files_cursor(V, recv, "AppOne.vpk")
+    check("on a package the hint says X Install", V.has("Install"), V.screen())
+    V.keys("cross")
+    check("X on one package asks 'Install this app?'", V.wait_screen("Install this app?", 5) and V.has("App One"), V.screen())
+    V.keys("circle"); V.wait_screen("screen=files", 4)
+    V.keys("square"); files_cursor(V, recv, "AppTwo.vpk"); V.keys("square")
+    V.wait_screen("2 selected", 4)
+    check("two ticked packages: the hint says X Install ticked", V.has("Install ticked"), V.screen())
+    V.keys("cross")
+    check("X asks 'Install these apps?' with the list", V.wait_screen("Install these apps?", 5) and V.has("App One") and V.has("App Two"), V.screen())
+    V.keys("circle"); V.wait_screen("screen=files", 4)
+    files_cursor(V, recv, "pic1.jpg"); V.keys("square")
+    V.wait_screen("3 selected", 4)
+    V.keys("cross")
+    check("packages and pictures ticked together: a clear message", V.wait_screen("Tick only packages", 4) and V.has("screen=files"), V.screen())
+    # ---- the options menu has no entries that the hint bar already offers
+    V.keys("select"); V.wait_screen("Options", 5)
+    items = V.menu_items()
+    check("the options menu does not repeat Install / Tick / Send", not any(t.startswith(("Install", "Send", "Tick the", "Untick ")) and not t.startswith("Untick everything") for t in items) and not any(t.startswith("Install") or t.startswith("Send") for t in items), items)
+    check("... but still has the rest (tick all, untick, copy, move, rename, delete, new folder)", any(t.startswith("Tick everything") for t in items) and any(t.startswith("Copy") for t in items) and any(t.startswith("Move") for t in items) and any(t.startswith("Delete") for t in items) and any(t.startswith("New folder") for t in items), items)
+    V.keys("circle"); V.wait_screen("screen=files", 4)
+    # ---- the "L R Tabs" hint is only on the Receive tab
+    V.keys("l", "l", "l")                                             # Files -> History -> Send -> Receive
+    V.wait_screen("tab=Receive", 5)
+    check("Receive: the hint bar has 'Tabs'", V.wait_screen("Tabs", 3), V.screen())
+    for key, tab in (("r", "Send"), ("r", "History"), ("r", "Files"), ("r", "Settings")):
+        V.keys(key); V.wait_screen("tab=" + tab, 4); time.sleep(0.3)
+        check(f"{tab}: no 'Tabs' on the hint bar (L / R still work)", "Tabs" not in V.screen(), V.screen())
+    V.stop(); VITAS.remove(V)
+    bad = sanitizer_clean([v for v in ALL_VITAS if v.name == "view"])
+    check("no sanitizer errors in the viewer tests", not bad, bad)
 
 # =========================================================================== run
 try:
@@ -2328,6 +3021,9 @@ try:
     if args.only in ("", "dpad"): test_dpad()
     if args.only in ("", "x11"): test_x11()
     if args.only in ("", "x13"): test_x13()
+    if args.only in ("", "move"): test_move()
+    if args.only in ("", "wifi"): test_wifi()
+    if args.only in ("", "view"): test_view()
 finally:
     finish_all()
 

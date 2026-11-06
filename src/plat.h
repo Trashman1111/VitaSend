@@ -86,6 +86,15 @@ void plat_net_shutdown(void);
 bool plat_net_local_ip(char out[16]);        /* false while Wi-Fi is not connected */
 const char *plat_net_error_text(void);       /* why the last socket open/bind/listen/connect failed, e.g. "bind: 0x80410130" */
 
+/* Asks the system to switch Wi-Fi on (the Vita has no official way to do this from an app, see plat_vita.c). Returns 0 when the
+ * request was sent - the connection then comes up by itself and plat_net_local_ip() turns true - or < 0 when it is not possible
+ * here; `detail` then holds a short readable reason (and, on success, may hold the system's answer for the log). Does not wait. */
+int  plat_wifi_turn_on(char *detail, size_t cap);
+
+/* Opens the system's Wi-Fi settings page (the way out when the app cannot switch Wi-Fi on itself). On the Vita this ends the app (the
+ * system starts the Settings app instead). Returns false if it is not possible here. */
+bool plat_open_wifi_settings(const char *uri);        /* uri: from config.json ("wifiSettingsUri"), "" / NULL = the built-in default */
+
 /* UDP: sockets are non-blocking. recvfrom returns >0 bytes, LS_IO_TIMEOUT if nothing is waiting. */
 ls_sock plat_udp_open(uint16_t port);        /* port 0 = any (send-only) */
 bool    plat_udp_join_group(ls_sock s, const char *group, const char *local_ip);
@@ -105,7 +114,9 @@ void    plat_sock_close(ls_sock s);
 #ifdef LS_HOST
 void plat_posix_set_data_dir(const char *dir);
 void plat_posix_set_browse_start(const char *dir);
-void plat_posix_set_free_space(uint64_t bytes);          /* tests: pretend the card has only this much room */
+void plat_posix_set_free_space(uint64_t bytes);
+/* tests: LS_WIFI_FILE=<path> holds "off" while Wi-Fi is off (any other text or no file = on);
+ *        LS_WIFI_TURNON=ok|fail|nojoin and LS_WIFI_DELAY_MS decide what plat_wifi_turn_on() does (see plat_posix.c) */          /* tests: pretend the card has only this much room */
 #endif
 
 #endif

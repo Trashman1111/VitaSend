@@ -30,6 +30,7 @@ code map see [ARCHITECTURE.md](ARCHITECTURE.md); for the wire protocol see [PROT
 | **[mbedTLS](https://github.com/Mbed-TLS/mbedtls) 3.6.2** | TLS 1.2, X.509 / ECDSA, SHA-256, DRBG. Built by `scripts/build-mbedtls.sh` with the modules the Vita cannot use switched off |
 | **CMake** | the build; detects optional SDK libraries |
 | **[stb_truetype](https://github.com/nothings/stb)** | rasterising the embedded fonts |
+| **[stb_image](https://github.com/nothings/stb)** | decoding pictures for the viewer (JPEG, PNG, BMP, GIF) |
 | **Poppins, Liberation Sans** (SIL OFL) | the UI fonts, cut down and compiled into the program by `tools/gen_fontdata.py` |
 | **[vita-headers](https://github.com/vitasdk/vita-headers)** | checking the Vita-only files compile against the real API without a full SDK build |
 | **[VitaShell](https://github.com/TheOfficialFloW/VitaShell)** (source, GPL-3.0) | reference for the package installer: the `head.bin` format and the PAF / ScePromoterUtil procedure |
@@ -86,7 +87,7 @@ class of bug on a PC.
 
 Because only two files touch the Vita, the rest of the program - protocol, engines, installer and the entire UI - is compiled
 for Linux and run under AddressSanitizer against scripts that **play the other LocalSend device** and **press the buttons**
-(and put simulated fingers on the touch screen). About 520 checks cover the transfer edge cases (cancel from both sides,
+(and put simulated fingers on the touch screen). More than 600 checks cover the transfer edge cases (cancel from both sides,
 dropped connections, path traversal, checksum errors, 120 files in one request, PIN lock-out ...), the installer (corrupt and
 malicious packages) and the interface. What the tests cannot cover - the real installer, Wi-Fi, touch panel, power - is
 verified by hand on a real Vita. See [TESTING.md](TESTING.md).

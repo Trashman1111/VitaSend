@@ -187,6 +187,13 @@ void gfx_icon(int icon, float cx, float cy, float s, gcol c)
         arc(cx, cy + 0.32f * s, 0.52f * s, -2.356f, -0.785f, t, c);
         arc(cx, cy + 0.32f * s, 0.76f * s, -2.356f, -0.785f, t, c);
         break;
+    case IC_WIFI_OFF:                                   /* the Wi-Fi symbol with a slash through it */
+        gfx_circle(cx, cy + 0.32f * s, 0.07f * s + 0.5f, c);
+        arc(cx, cy + 0.32f * s, 0.28f * s, -2.356f, -0.785f, t, c);
+        arc(cx, cy + 0.32f * s, 0.52f * s, -2.356f, -0.785f, t, c);
+        arc(cx, cy + 0.32f * s, 0.76f * s, -2.356f, -0.785f, t, c);
+        L(-0.46f, -0.46f, 0.46f, 0.44f);
+        break;
     case IC_REFRESH:
         arc(cx, cy, 0.34f * s, -1.2f, 3.6f, t, c);
         L(0.14f, -0.40f, 0.28f, -0.18f); L(0.28f, -0.18f, 0.02f, -0.12f);

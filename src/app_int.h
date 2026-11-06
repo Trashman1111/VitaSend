@@ -8,6 +8,8 @@
  *   app_settings.c  Settings, log, dropdown lists
  *   app_dialogs.c   on-screen keyboard, message viewer, incoming request, transfer, confirmations
  *   app_install.c   installing .vpk packages (one, or a queue)
+ *   app_move.c      copying files / folders, and moving them to another memory card (copy, then remove the original)
+ *   app_view.c      the picture and text viewer
  *   app_saver.c     the screensaver
  *
  * Author: trashman (VitaSend)
@@ -28,6 +30,7 @@
 #include "touch.h"
 #include "util.h"
 #include "vpk.h"
+#include "wifi.h"
 #include "xfer.h"
 
 #include <stdarg.h>
@@ -40,7 +43,7 @@
 typedef enum {
     SC_HOME = TAB_RECEIVE, SC_SEND = TAB_SEND, SC_HISTORY = TAB_HISTORY, SC_FILES = TAB_FILES, SC_SETTINGS = TAB_SETTINGS,   /* the tabs */
     SC_BROWSER, SC_OSK, SC_LOG,
-    SC_MESSAGE, SC_REQUEST, SC_TRANSFER, SC_CONFIRM, SC_INSTALL, SC_MENU, SC_PICK, SC_INFO     /* dialogs on top of a page */
+    SC_MESSAGE, SC_REQUEST, SC_TRANSFER, SC_CONFIRM, SC_INSTALL, SC_MENU, SC_PICK, SC_INFO, SC_MOVE, SC_VIEW     /* dialogs on top of a page (SC_VIEW: the picture / text viewer, full screen) */
 } screen_id;
 
 typedef enum { OP_ALIAS, OP_PIN_SET, OP_SEND_PIN, OP_MESSAGE, OP_ADD_IP, OP_RENAME, OP_NEWDIR } osk_purpose;
@@ -128,6 +131,15 @@ void menu_draw(const xfer_status *x);
 void menu_input(uint32_t p);
 void do_delete(void);                                   /* after the confirmation */
 void delete_question(char *q, size_t cap);
+bool delete_tree(const char *path, int depth);          /* a file, or a folder with everything inside; false if something stayed */
+void files_move_finished(int ok, int bad, int left, bool cancelled, bool copy);   /* app_move.c is done: report, reload */
+
+/* ---- app_view.c ---- */
+int  view_kind(const char *name);                       /* 0 = cannot be opened here, 1 = picture, 2 = text */
+void view_open(const char *const *paths, int n, int start, screen_id ret);
+bool view_loading(void);                                /* the screen is about to load a file (redraw quickly) */
+void view_draw(const xfer_status *x);
+void view_input(uint32_t p);
 
 /* ---- app_pages.c ---- */
 extern char s_text_to_send[OSK_MAX + 1];                /* a text message waiting to be sent ("" = none) */
@@ -183,6 +195,15 @@ bool iq_active(void);                                   /* several packages in o
 bool iq_running(void);                                  /* ... and it is installing right now */
 void iq_tick(void);
 void vpk_chime_events(const vpk_status *vs);
+
+/* ---- app_move.c ---- */
+bool move_busy(void);                                   /* a copy between two cards is running */
+void move_reset(void);                                  /* forget the collected items */
+bool move_add(const char *src, const char *dst);        /* collect an item: its path and the path it will have */
+bool move_start(const char *dstdir, bool keep_originals);   /* start copying what was collected (false + message: no room) */
+void move_tick(void);
+void move_draw(const xfer_status *x);
+void move_input(uint32_t p);
 
 /* ---- app_saver.c ---- */
 uint32_t idle_unit_ms(void);                            /* 1000 on the Vita; tests shorten it */

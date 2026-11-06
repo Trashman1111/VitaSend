@@ -9,7 +9,7 @@ executable (`host/`) against the real mbedTLS, run under AddressSanitizer / UBSa
 make -C host SAN=1                          # builds host/localsend-host
 python3 host/fake_peer.py                   # protocol checks: discovery, /info, /register, malformed requests (39)
 python3 host/fake_peer.py --chunked-replies
-python3 host/test_transfer.py               # the big one: receive, send, PIN, install, touch, settings, UI ... (about 520 checks, a few minutes)
+python3 host/test_transfer.py               # the big one: receive, send, PIN, install, touch, settings, UI ... (more than 550 checks, several minutes)
 ```
 
 You need Python 3 and the `openssl` command line tool (the scripts make throw-away certificates). Pillow
@@ -21,9 +21,12 @@ Run a part of it with `--only`:
 python3 host/test_transfer.py --only install    # installer + Files tab (builds real .vpk files)
 python3 host/test_transfer.py --only touch      # simulated fingers
 python3 host/test_transfer.py --only queue      # install queue, automatic installation, chimes
+python3 host/test_transfer.py --only move       # copying and moving files: rename, copy between cards, cancel, conflicts
+python3 host/test_transfer.py --only view       # the picture / text viewer, file queues, the Files keys, the slim menu
+python3 host/test_transfer.py --only wifi       # Wi-Fi off at the start / lost while running: the dialog, the button, cancel, refusal, continuing offline
 ```
 
-(`recv send extra install privacy theme touch migrate files exists retry queue polish dpad x11 x13` - run
+(`recv send extra install privacy theme touch migrate files exists retry queue polish dpad x11 x13 move wifi` - run
 `python3 host/test_transfer.py --help` for the list.) Add `--keep` to keep the temporary folder with the logs.
 
 ## What the tests cover
@@ -62,6 +65,8 @@ Environment variables (test knobs, only in the PC build):
 | `LS_FAKE_CLOCK=14:07` | pretend wall-clock time |
 | `LS_IDLE_UNIT_MS=100` | shrinks "seconds" of the screensaver timer (30 s -> 3 s) |
 | `LS_SLOW_PROMOTE_MS`, `LS_FAKE_PROMOTE_FAIL` | the stand-in installer takes long / fails |
+| `LS_FAIL_RENAME=1`, `LS_SLOW_MOVE_MS=60` | renaming always fails (so *Move* copies, like between two cards) / each copied 64 KB block takes this long |
+| `LS_WIFI_FILE=path`, `LS_WIFI_TURNON=ok\|fail\|nojoin`, `LS_WIFI_DELAY_MS`, `LS_WIFI_TIMEOUT_MS`, `LS_WIFI_SETTINGS_FAIL=1` (opening the Wi-Fi settings fails; the log shows which address would be opened) | a fake Wi-Fi switch: the file says `off` while Wi-Fi is off (the test writes it); "switch on" works after the delay / is refused / is accepted but never connects; how long the app waits for the network |
 | `LS_SLOW_KEEPAWAKE_MS`, `LS_SLOW_INPUT_MS` | slow calls, to shake out timing bugs (they found real ones on a Vita) |
 
 `test_transfer.py` is organised as one function per area (`test_receive()`, `test_install()`, ...), with a `Vita` class that
