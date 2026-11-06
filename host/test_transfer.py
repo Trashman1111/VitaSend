@@ -19,6 +19,18 @@ import re, argparse, atexit, hashlib, http.client, json, os, random, shutil, soc
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+
+def _local_ip():
+    """This machine's outgoing address - the same one the program shows on screen (plat_net_local_ip)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("192.0.2.1", 9)); return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+LOCAL_IP = _local_ip()
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
 ap.add_argument("--binary", default=os.path.join(HERE, "localsend-host"))
@@ -1430,7 +1442,7 @@ def test_x11():
     V = Vita("x11h", 53440, 53399, config={"alias": "Hider", "hideIds": True, "screensaver": 0})
     VITAS.append(V)
     V.wait_screen("sidebar", 8); V.keys("right", "cross")
-    check("device details respect 'hide IP address and fingerprint'", V.wait_screen("screen=info", 5) and V.has("Hidden") and not re.search(r"[0-9a-f]{32}", V.screen()) and "192.0.2." not in V.screen(), V.screen())
+    check("device details respect 'hide IP address and fingerprint'", V.wait_screen("screen=info", 5) and V.has("Hidden") and not re.search(r"[0-9a-f]{32}", V.screen()) and LOCAL_IP.rsplit(".", 1)[0] + "." not in V.screen(), V.screen())
     V.stop(); VITAS.remove(V)
 
     # ---- battery and clock in the main application
@@ -1714,23 +1726,23 @@ def test_privacy():
     V = Vita("priv", 53381, 53399, config={"alias": "Privacy"})
     VITAS.append(V)
     fp = V.fp
-    check("by default the address and fingerprint are shown", V.has("192.0.2.2") and len(fp) == 64 and fp in V.screen(), V.screen())
+    check("by default the address and fingerprint are shown", V.has(LOCAL_IP) and len(fp) == 64 and fp in V.screen(), V.screen())
     V.goto_setting("hide")
     check("settings list has the 'Hide IP address and fingerprint' row", V.wait_screen("Hide IP address and fingerprint", 5) and V.wait_screen("Off - shown", 5), V.screen())
     V.keys("cross")
     check("[X] turns it on and saves it", wait_for(lambda: V.config().get("hideIds") is True, 8) and V.wait_screen("On - not shown", 5), V.config())
-    check("the left menu no longer shows the address", V.wait_screen("Address hidden", 3) is not None and "192.0.2.2" not in V.screen(), V.screen())
+    check("the left menu no longer shows the address", V.wait_screen("Address hidden", 3) is not None and LOCAL_IP not in V.screen(), V.screen())
     V.keys("circle")
     check("Receive page: address and fingerprint are hidden", V.wait_screen("This device", 5) and wait_for(lambda: "Hidden (Settings" in V.screen(), 5), V.screen())
-    check("neither the IP nor the fingerprint appears anywhere on screen", "192.0.2.2" not in V.screen() and fp not in V.screen(), V.screen())
+    check("neither the IP nor the fingerprint appears anywhere on screen", LOCAL_IP not in V.screen() and fp not in V.screen(), V.screen())
     V.stop(); VITAS.remove(V)
     V2 = Vita("priv2", 53382, 53399, config={"alias": "Privacy2", "hideIds": True})
     VITAS.append(V2)
-    check("the setting is read from config.json at start", V2.has("Address hidden") and "192.0.2.2" not in V2.screen() and "Hidden (Settings" in V2.screen(), V2.screen())
+    check("the setting is read from config.json at start", V2.has("Address hidden") and LOCAL_IP not in V2.screen() and "Hidden (Settings" in V2.screen(), V2.screen())
     V2.goto_setting("hide"); V2.keys("cross")
     check("[X] again turns it off (saved)", wait_for(lambda: V2.config().get("hideIds") is False, 8), V2.config())
     V2.keys("circle")
-    check("and the address is shown again on the Receive page", wait_for(lambda: "192.0.2.2" in V2.screen() and "Address hidden" not in V2.screen(), 8), V2.screen())
+    check("and the address is shown again on the Receive page", wait_for(lambda: LOCAL_IP in V2.screen() and "Address hidden" not in V2.screen(), 8), V2.screen())
     V2.stop(); VITAS.remove(V2)
 
 # =========================================================================== THEMES (Dark / OLED)
