@@ -363,13 +363,10 @@ bool plat_rmdir(const char *path)                  { return sceIoRmdir(path) >= 
 const char *plat_pkg_dir(void) { return "ux0:data/pkg"; }
 const char *plat_own_title_id(void) { return LS_TITLE_ID; }
 
-int plat_promote(const char *dir, char *why, size_t cap)
+#ifndef LS_NO_PROMOTER
+/* op 0: install the unpacked package in `arg` (a folder); op 1: delete the installed app with title id `arg`. */
+static int promoter_op(int op, const char *arg, char *why, size_t cap)
 {
-#ifdef LS_NO_PROMOTER
-    (void)dir;
-    snprintf(why, cap, "This build has no installer support (VitaSDK lacks ScePromoterUtil)");
-    return -1;
-#else
     static uint32_t argp[] = { 0x180000, (uint32_t)-1, (uint32_t)-1, 1, (uint32_t)-1, (uint32_t)-1 };
     int result = -1;
     int res;
@@ -393,8 +390,13 @@ int plat_promote(const char *dir, char *why, size_t cap)
     if (res < 0) { snprintf(why, cap, "Installer init failed (0x%08X)", (unsigned)res); goto out; }
     inited = true;
 
-    res = scePromoterUtilityPromotePkgWithRif(dir, 1);
-    if (res < 0) { snprintf(why, cap, "The system refused the package (0x%08X)", (unsigned)res); goto out; }
+    if (op == 0) {
+        res = scePromoterUtilityPromotePkgWithRif(arg, 1);
+        if (res < 0) { snprintf(why, cap, "The system refused the package (0x%08X)", (unsigned)res); goto out; }
+    } else {
+        res = scePromoterUtilityDeletePkg(arg);
+        if (res < 0) { snprintf(why, cap, "The system could not remove %s (0x%08X)", arg, (unsigned)res); goto out; }
+    }
     res = 0;
 
 out:
@@ -406,7 +408,72 @@ out:
         sceSysmoduleUnloadModuleInternalWithArg(SCE_SYSMODULE_INTERNAL_PAF, 0, NULL, &uo);
     }
     return res < 0 ? res : 0;
+}
 #endif
+
+int plat_promote(const char *dir, char *why, size_t cap)
+{
+#ifdef LS_NO_PROMOTER
+    (void)dir;
+    snprintf(why, cap, "This build has no installer support (VitaSDK lacks ScePromoterUtil)");
+    return -1;
+#else
+    return promoter_op(0, dir, why, cap);
+#endif
+}
+
+bool plat_delete_app(const char *titleid, char *why, size_t cap)
+{
+#ifdef LS_NO_PROMOTER
+    (void)titleid;
+    snprintf(why, cap, "This build has no installer support");
+    return false;
+#else
+    return promoter_op(1, titleid, why, cap) == 0;
+#endif
+}
+
+const char *plat_own_app_dir(void) { return "ux0:app/" LS_TITLE_ID; }
+
+bool plat_app_installed(const char *titleid)
+{
+    char p[64];
+    SceIoStat st;
+    snprintf(p, sizeof p, "ux0:app/%s", titleid);
+    return sceIoGetstat(p, &st) >= 0;
+}
+
+/* The updater app: a copy of this program started under the title id LS_HELPER_TITLE_ID. */
+bool plat_running_as_helper(void)
+{
+#ifdef LS_HAVE_APPMGR
+    char tid[32] = "";
+    if (sceAppMgrAppParamGetString(0, 12, tid, sizeof tid) < 0) return false;      /* 12 = TITLE_ID, as VitaShell reads it */
+    return strcmp(tid, LS_HELPER_TITLE_ID) == 0;
+#else
+    return false;
+#endif
+}
+
+int plat_update_helper_run(void)
+{
+#ifdef LS_HAVE_APPMGR
+    char why[200] = "";
+    sceAppMgrDestroyOtherApp();                      /* ends VitaSend, so that its files can be replaced */
+    sceKernelDelayThread(300 * 1000);
+    int r = plat_promote(plat_pkg_dir(), why, sizeof why);
+    SceUID fd = sceIoOpen("ux0:data/VitaSend/update-result.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+    if (fd >= 0) {
+        char msg[260];
+        if (r == 0) snprintf(msg, sizeof msg, "ok\n");
+        else snprintf(msg, sizeof msg, "%s\n", why);
+        sceIoWrite(fd, msg, strlen(msg));
+        sceIoClose(fd);
+    }
+    plat_launch_app(LS_TITLE_ID);                    /* VitaSend again - the new version, if all went well */
+    sceKernelExitProcess(0);
+#endif
+    return 0;
 }
 
 /* ------------------------------------------------------------------ network */

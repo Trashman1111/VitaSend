@@ -152,6 +152,41 @@ const char *plat_pkg_dir(void)
 
 const char *plat_own_title_id(void) { return "LSND00001"; }
 
+/* ---- self-update helper (PC test build: the "updater app" is simulated in-process) ---- */
+const char *plat_own_app_dir(void)
+{
+    const char *e = getenv("LS_APP_DIR");               /* tests: a folder with eboot.bin and sce_sys/param.sfo of the "installed" app */
+    return e ? e : "";
+}
+bool plat_running_as_helper(void) { return false; }
+bool plat_app_installed(const char *titleid)
+{
+    char p[512];
+    struct stat st;
+    snprintf(p, sizeof p, "%s/installed/%s", s_data_dir, titleid);
+    return stat(p, &st) == 0;
+}
+bool plat_delete_app(const char *titleid, char *why, size_t cap)
+{
+    char cmd[700];
+    snprintf(cmd, sizeof cmd, "rm -rf '%s/installed/%s'", s_data_dir, titleid);
+    if (system(cmd) != 0) { snprintf(why, cap, "cannot remove"); return false; }
+    ls_log("delete app: %s", titleid);
+    return true;
+}
+int plat_update_helper_run(void)
+{
+    char why[160] = "";
+    ls_log("update helper: installing the staged package");
+    int r = plat_promote(plat_pkg_dir(), why, sizeof why);
+    char p[400];
+    snprintf(p, sizeof p, "%s/update-result.txt", s_data_dir);
+    FILE *f = fopen(p, "w");
+    if (f) { fprintf(f, "%s\n", r == 0 ? "ok" : why); fclose(f); }
+    ls_log("update helper: %s", r == 0 ? "done" : why);
+    return r;
+}
+
 int plat_promote(const char *dir, char *why, size_t cap)
 {
     { const char *sl = getenv("LS_SLOW_PROMOTE_MS"); if (sl && atoi(sl) > 0) usleep((useconds_t)atoi(sl) * 1000u); }   /* the real installer takes a while */
@@ -232,6 +267,10 @@ bool plat_can_launch(void) { return true; }
 bool plat_launch_app(const char *titleid)
 {
     ls_log("launch: %s", titleid);
+    if (!strcmp(titleid, LS_HELPER_TITLE_ID)) {          /* the updater app: on a Vita it is another process that ends this one */
+        plat_update_helper_run();
+        exit(0);
+    }
     return true;
 }
 

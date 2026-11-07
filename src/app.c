@@ -436,6 +436,7 @@ void app_run(const app_opts *opts)
         handle_input(p);
         check_events();
         upd_ui_tick(now);
+        install_tick(now);
 
         /* idle for long enough: start the screensaver (not while a question waits for the user, or while typing) */
         {

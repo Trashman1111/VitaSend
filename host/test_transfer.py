@@ -332,6 +332,14 @@ def prepare_async(port, files, **kw):
     t = threading.Thread(target=run, daemon=True); t.start()
     return t, box
 
+
+def join_answer(t, V, key, total=10):
+    """The answer key can be lost when it arrives in the very frame the dialog appears (slow CI machines): press again while the sender still waits."""
+    end = time.time() + total
+    while t.is_alive() and time.time() < end:
+        t.join(2.5)
+        if t.is_alive() and V.has("Incoming request"): V.keys(key)
+
 ALL_VITAS = []
 def finish_all():
     for v in VITAS: v.stop()
@@ -380,7 +388,7 @@ def test_receive():
     scr = V.screen()
     check("dialog names the sender, the files and the total size", "Banana PC" in scr and "hello.bin" in scr and "big.bin" in scr and "2 files" in scr, scr)
     V.keys("circle")
-    t.join(10)
+    join_answer(t, V, "circle")
     check("rejecting -> sender gets 403", box.get("r", (None,))[0] == 403, box)
     check("after rejecting the Vita is back on the home screen", V.wait_screen("This device", 5))
     check("rejected request is in the history", wait_for(lambda: any(h["status"] == 3 for h in V.history()), 5), V.history())
@@ -389,7 +397,7 @@ def test_receive():
     t, box = prepare_async(port, files, alias="Banana PC")
     V.wait_screen("Incoming request", 10)
     V.keys("cross")
-    t.join(10)
+    join_answer(t, V, "cross")
     st, j = box["r"]
     check("accepting -> 200 with sessionId and one token per file",
           st == 200 and j and j.get("sessionId") and set(j.get("files", {})) == {"id-1", "id-2"}, box)
@@ -3348,22 +3356,57 @@ def test_update():
     check("[X] closes it", V.wait_screen("screen=settings", 5), V.screen())
     drop(V)
 
-    # ---- 6. download (redirect + chunked body), checksum from SHA256SUMS.txt, install over ourselves
+    # ---- 6. download (redirect + chunked body), checksum from SHA256SUMS.txt, then the self-update through the updater app
+    #         (the running app cannot be replaced by the system installer: error 0x80101114 on a real Vita)
+    appdir = os.path.join(ROOT, "appdir")
+    old_vpk = os.path.join(ROOT, "old.vpk")
+    make_vpk(old_vpk, title="VitaSend", tid="LSND00001", ver="00.96")
+    zipfile.ZipFile(old_vpk).extractall(appdir)
+    open(os.path.join(appdir, "eboot.bin"), "wb").write(make_eboot(False, seed=9))   # the installed (old) program differs from the new one
+    old_eboot = open(os.path.join(appdir, "eboot.bin"), "rb").read()
     gh.releases = [gh.release("v0.9.7"), gh.release("v0.9.4")]
     gh.chunked = True
-    V = vita("upd6")
+    V = vita("upd6", env={"LS_APP_DIR": appdir})
     check("v0.9.7 is offered", V.wait_screen("A new version is available", 12) and "v0.9.7" in V.screen() and "pre-release" not in V.screen(), V.screen())
     V.keys("cross")
     check("[X] downloads it (through the redirect)", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-800:])
     check("the downloaded file is kept and checked", wait_for(lambda: os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk")), 3) and sha(open(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk"), "rb").read()) == good)
-    check("the installer says what happens to settings and files", V.has("Your settings and received files stay"), V.screen())
+    check("the installer says what happens to settings and files", V.has("Your settings and received files stay") and V.has("starts again by itself"), V.screen())
     V.keys("cross")
-    check("the install runs over the running app", V.wait_screen("VitaSend updated", 20) and V.wait_screen("start it again", 3), V.screen() + V.log()[-600:])
-    check("... and the new files are in place", os.path.isdir(installed_dir(V, "LSND00001")), os.listdir(os.path.join(V.data, "installed")) if os.path.isdir(os.path.join(V.data, "installed")) else "no installed dir")
-    V.keys("square")
-    check("[SQUARE] closes the app so the new version can be started", wait_for(lambda: V.proc.poll() is not None, 8))
+    check("the update is prepared and the updater is started", V.wait_screen("Finishing the update", 20), V.screen() + V.log()[-600:])
+    check("... VitaSend ends itself (the updater app takes over)", wait_for(lambda: V.proc.poll() is not None, 10), V.log()[-500:])
+    inst = os.path.join(V.data, "installed")
+    check("the updater app is installed: a copy of the running eboot.bin under another title id",
+          os.path.isdir(os.path.join(inst, "LSNDUPD01")) and open(os.path.join(inst, "LSNDUPD01", "eboot.bin"), "rb").read() == old_eboot, os.listdir(inst) if os.path.isdir(inst) else "no installed dir")
+    hs = open(os.path.join(inst, "LSNDUPD01", "sce_sys", "param.sfo"), "rb").read() if os.path.isdir(os.path.join(inst, "LSNDUPD01")) else b""
+    check("... with its own title id in param.sfo (and no trace of VitaSend's)", b"LSNDUPD01" in hs and b"LSND00001" not in hs)
+    check("the updater installed the new version", os.path.isdir(os.path.join(inst, "LSND00001")) and open(os.path.join(inst, "LSND00001", "eboot.bin"), "rb").read() != old_eboot, os.listdir(inst))
+    check("the log tells the story", all(t in V.log() for t in ("starting the updater app", "update helper: installing", "update helper: done")), V.log()[-600:])
+    check("no leftovers in the package folder or next to it", not os.path.exists(os.path.join(V.data, "updater.vpk")) and not os.path.exists(os.path.join(V.data, "pkg")), os.listdir(V.data))
+    check("the result is left for the next start", open(os.path.join(V.data, "update-result.txt")).read().strip() == "ok")
+    # the next start of VitaSend reports it and removes the updater app
+    subprocess.run([args.binary, "--data", V.data, "--port", "53897", "--seconds", "2"], env=dict(os.environ, LS_UPDATE_API="localhost:1"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+    lg = open(os.path.join(V.data, "log.txt")).read()
+    check("the next start says the update worked", "the updater app installed the new version" in lg, lg[-500:])
+    check("... and removes the updater app again", "the updater app was removed again" in lg and not os.path.exists(os.path.join(inst, "LSNDUPD01")), os.listdir(inst))
+    check("... and the result file is gone", not os.path.exists(os.path.join(V.data, "update-result.txt")))
     VITAS.remove(V)
     gh.chunked = False
+
+    # the updater app cannot be made (this program's files cannot be read): a clear message, nothing is closed
+    V = vita("upd6b")
+    V.wait_screen("A new version is available", 12); V.keys("cross")
+    V.wait_screen("Install the new VitaSend?", 20); V.keys("cross")
+    check("no files of the installed VitaSend to copy: a clear message", V.wait_screen("Installation failed", 10) and V.wait_screen("Cannot read the files of the installed VitaSend", 2), V.screen())
+    check("... and VitaSend keeps running", V.proc.poll() is None)
+    drop(V)
+    # the system refuses the updater app
+    V = vita("upd6c", env={"LS_APP_DIR": appdir, "LS_FAKE_PROMOTE_FAIL": "1"})
+    V.wait_screen("A new version is available", 12); V.keys("cross")
+    V.wait_screen("Install the new VitaSend?", 20); V.keys("cross")
+    check("the system refuses the updater: the reason is shown, VitaSend stays", V.wait_screen("Installation failed", 15) and V.wait_screen("simulated", 2) and V.proc.poll() is None, V.screen())
+    check("... and the log has the result", wait_for(lambda: "Install: FAILED" in V.log(), 3), V.log()[-400:])
+    drop(V)
 
     # ---- 7. a wrong checksum is refused and the file deleted
     gh.sums = f"{'0' * 64}  VitaSend-v0.9.7.vpk\n".encode()

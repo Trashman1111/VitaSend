@@ -197,6 +197,7 @@ void confirm_input(uint32_t p);
 
 /* ---- app_install.c ---- */
 void install_open(const char *path, screen_id ret);
+void install_tick(uint64_t now);                       /* the self-update: starts the updater app once the new version is staged */
 void install_open_update(const char *path, screen_id ret);   /* the new VitaSend from the update dialog (may replace the running app) */
 void install_draw(const xfer_status *x);
 void install_input(uint32_t p);

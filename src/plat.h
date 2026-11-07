@@ -81,6 +81,15 @@ const char *plat_own_title_id(void);
  * otherwise fills `why` with a readable error. Needs the app to be built "unsafe" (see README). */
 int         plat_promote(const char *dir, char *why, size_t cap);
 
+/* Self-update, the way VitaShell does it: the running app cannot be replaced by the system installer (0x80101114), so a small
+ * "updater" app (a copy of this program's eboot under another title id) is installed first; it is started, ends the running
+ * app, installs the new version from the staged package folder and starts the new version again. */
+const char *plat_own_app_dir(void);                  /* where this app's installed files are (ux0:app/<TITLEID>) */
+bool        plat_running_as_helper(void);            /* true: this process IS the updater app (main() then only calls plat_update_helper_run) */
+int         plat_update_helper_run(void);            /* the updater app's whole job; does not return on the Vita */
+bool        plat_app_installed(const char *titleid);
+bool        plat_delete_app(const char *titleid, char *why, size_t cap);   /* removes an installed app (the updater, afterwards) */
+
 /* ---------- network ---------- */
 bool plat_net_init(void);
 void plat_net_shutdown(void);

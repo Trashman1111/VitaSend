@@ -38,6 +38,7 @@ enum { ZIP_OK = 0, ZIP_STOPPED = 1, ZIP_BAD = -1, ZIP_IO = -2, ZIP_CRC = -3, ZIP
 /* Unpacks one entry through `sink`. ZIP_STOPPED if the sink stopped it (the CRC is then not checked). */
 int  zip_extract(zip_file *z, int idx, zip_sink sink, void *ctx);
 const char *zip_strerror(int code);
+uint32_t    zip_crc32(const uint8_t *p, size_t n);        /* CRC-32 of a buffer (as stored in zip files) */
 
 /* A file name from inside an archive is safe to use below a folder: no "..", no absolute path, no drive letter. */
 bool zip_name_is_safe(const char *name);

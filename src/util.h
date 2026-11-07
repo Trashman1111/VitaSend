@@ -19,6 +19,7 @@
 #ifndef LS_SUPPORT_TEXT
 #define LS_SUPPORT_TEXT  ""
 #endif
+#define LS_HELPER_TITLE_ID "LSNDUPD01"     /* the small updater app VitaSend installs for a self-update (9 characters, like LS_TITLE_ID) */
 #define LS_PROTO_VERSION "2.1"            /* what we claim in "version" */
 #define LS_DEFAULT_PORT  53317
 #define LS_MULTICAST_IP  "224.0.0.167"

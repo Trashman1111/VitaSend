@@ -178,6 +178,7 @@ static void st_set(vpk_state state, const char *stage, int pct, const char *msg)
     if (pct >= 0) s_st.pct = pct;
     if (msg) ls_strlcpy(s_st.message, msg, sizeof s_st.message);
     plat_mutex_unlock(s_mx);
+    if (state == VPK_FAILED || state == VPK_CANCELLED || state == VPK_DONE) ls_log("Install: %s - %s", state == VPK_DONE ? "done" : (state == VPK_FAILED ? "FAILED" : "cancelled"), msg ? msg : "");
 }
 
 void vpk_init(void)
@@ -247,9 +248,14 @@ static void fail(const char *fmt, const char *a)
     st_set(VPK_FAILED, NULL, -1, m);
 }
 
-static void install_thread(void *arg)
+/* mode 0: a normal installation (ends in VPK_DONE)
+ * mode 1: stage only - unpack into the package folder and write head.bin, but leave it there (the self-update: the updater app
+ *         installs it after VitaSend has ended); ends in VPK_DONE
+ * mode 2: install without announcing the end (the updater app itself, which comes first in a self-update)
+ * Returns true if the package got as far as its mode asks. */
+static bool install_one(const char *file, int mode)
 {
-    char *file = arg;
+    bool ok = false, keep = false;
     const char *pkg = plat_pkg_dir();
     zip_file z;
     memset(&z, 0, sizeof z);
@@ -269,6 +275,7 @@ static void install_thread(void *arg)
     if (!u.buf) { fail("%s", "Out of memory"); goto done; }
     if (!zip_open(&z, file, err, sizeof err)) { fail("%s", err); goto done; }
     if (!inspect_open(&z, &info)) { fail("%s", info.err); goto done; }
+    if (mode == 1 && strcmp(info.titleid, plat_own_title_id()) != 0) { fail("%s", "This package is not VitaSend"); goto done; }
     plat_mutex_lock(s_mx);
     ls_strlcpy(s_st.title, info.title, sizeof s_st.title);
     ls_strlcpy(s_st.titleid, info.titleid, sizeof s_st.titleid);
@@ -350,13 +357,20 @@ static void install_thread(void *arg)
 
     if (s_cancel) { st_set(VPK_CANCELLED, NULL, -1, "Cancelled - nothing was installed"); goto done; }
 
-    st_set(VPK_RUNNING, "Installing (this takes a moment)", 95, NULL);
+    if (mode == 1) {
+        st_set(VPK_DONE, "Ready", 100, "The new version is ready. VitaSend closes now and the updater finishes the installation.");
+        ok = keep = true;
+        goto done;
+    }
+
+    st_set(VPK_RUNNING, mode == 2 ? "Preparing the updater (this takes a moment)" : "Installing (this takes a moment)", 95, NULL);
     plat_keep_awake();
     if (plat_promote(pkg, why, sizeof why) != 0) {
         st_set(VPK_FAILED, NULL, -1, why);
         goto done;
     }
-    {
+    ok = true;
+    if (mode == 0) {
         char m[200];
         snprintf(m, sizeof m, "%s is installed. Look for its bubble on the LiveArea.", info.title);
         st_set(VPK_DONE, "Done", 100, m);
@@ -366,8 +380,133 @@ done:
     if (u.f) fclose(u.f);
     zip_close(&z);
     free(u.buf);
-    rm_tree(pkg, 0);
+    if (!keep) rm_tree(pkg, 0);
+    return ok;
+}
+
+/* ---- the updater app: this program's own eboot.bin under another title id, as a small .vpk ---- */
+
+static void put16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
+static void put32(uint8_t *p, uint32_t v) { put16(p, v); put16(p + 2, v >> 16); }
+
+static uint8_t *slurp(const char *path, size_t max, size_t *len)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (n <= 0 || (size_t)n > max) { fclose(f); return NULL; }
+    uint8_t *b = malloc((size_t)n);
+    if (b && fread(b, 1, (size_t)n, f) != (size_t)n) { free(b); b = NULL; }
+    fclose(f);
+    if (b) *len = (size_t)n;
+    return b;
+}
+
+static bool write_stored_zip(const char *out, const char *const *names, const uint8_t *const *data, const size_t *len, int n)
+{
+    FILE *f = fopen(out, "wb");
+    if (!f) return false;
+    uint32_t off[4] = { 0 };
+    uint32_t pos = 0;
+    bool ok = true;
+    for (int i = 0; i < n && ok; i++) {                         /* local headers + data */
+        uint8_t h[30];
+        memset(h, 0, sizeof h);
+        put32(h, 0x04034b50u); put16(h + 4, 20);
+        put32(h + 14, zip_crc32(data[i], len[i])); put32(h + 18, (uint32_t)len[i]); put32(h + 22, (uint32_t)len[i]);
+        put16(h + 26, (uint32_t)strlen(names[i]));
+        off[i] = pos;
+        ok = fwrite(h, 1, sizeof h, f) == sizeof h && fwrite(names[i], 1, strlen(names[i]), f) == strlen(names[i]) && fwrite(data[i], 1, len[i], f) == len[i];
+        pos += (uint32_t)(sizeof h + strlen(names[i]) + len[i]);
+    }
+    uint32_t cd = pos;
+    for (int i = 0; i < n && ok; i++) {                         /* central directory */
+        uint8_t h[46];
+        memset(h, 0, sizeof h);
+        put32(h, 0x02014b50u); put16(h + 4, 20); put16(h + 6, 20);
+        put32(h + 16, zip_crc32(data[i], len[i])); put32(h + 20, (uint32_t)len[i]); put32(h + 24, (uint32_t)len[i]);
+        put16(h + 28, (uint32_t)strlen(names[i]));
+        put32(h + 42, off[i]);
+        ok = fwrite(h, 1, sizeof h, f) == sizeof h && fwrite(names[i], 1, strlen(names[i]), f) == strlen(names[i]);
+        pos += (uint32_t)(sizeof h + strlen(names[i]));
+    }
+    if (ok) {
+        uint8_t e[22];
+        memset(e, 0, sizeof e);
+        put32(e, 0x06054b50u); put16(e + 8, (uint32_t)n); put16(e + 10, (uint32_t)n);
+        put32(e + 12, pos - cd); put32(e + 16, cd);
+        ok = fwrite(e, 1, sizeof e, f) == sizeof e;
+    }
+    if (fclose(f) != 0) ok = false;
+    return ok;
+}
+
+/* eboot.bin and param.sfo of the installed VitaSend; in param.sfo every "LSND00001" (TITLE_ID, CONTENT_ID) becomes "LSNDUPD01". */
+static bool make_helper_vpk(const char *out, char *err, size_t cap)
+{
+    char p[PATH_CAP];
+    size_t eb_len = 0, sfo_len = 0;
+    const char *app = plat_own_app_dir();
+    snprintf(p, sizeof p, "%s/eboot.bin", app);
+    uint8_t *eb = slurp(p, 48u << 20, &eb_len);
+    snprintf(p, sizeof p, "%s/sce_sys/param.sfo", app);
+    uint8_t *sfo = slurp(p, 65536, &sfo_len);
+    bool ok = false;
+    if (!eb || !sfo) { snprintf(err, cap, "Cannot read the files of the installed VitaSend (%s)", app); goto out; }
+    const char *own = plat_own_title_id();
+    size_t tl = strlen(own);
+    if (tl != strlen(LS_HELPER_TITLE_ID)) { snprintf(err, cap, "Internal error: title id lengths differ"); goto out; }
+    int patched = 0;
+    for (size_t i = 0; i + tl <= sfo_len; i++)
+        if (memcmp(sfo + i, own, tl) == 0) { memcpy(sfo + i, LS_HELPER_TITLE_ID, tl); patched++; i += tl - 1; }
+    if (!patched) { snprintf(err, cap, "The installed param.sfo has no title id"); goto out; }
+    {
+        const char *names[2] = { "eboot.bin", "sce_sys/param.sfo" };
+        const uint8_t *data[2] = { eb, sfo };
+        size_t len[2] = { eb_len, sfo_len };
+        if (!write_stored_zip(out, names, data, len, 2)) { snprintf(err, cap, "Cannot write the updater package (memory card full?)"); goto out; }
+    }
+    ok = true;
+out:
+    free(eb);
+    free(sfo);
+    return ok;
+}
+
+static volatile int s_selfupdate;
+
+static void install_thread(void *arg)
+{
+    char *file = arg;
+    if (!s_selfupdate) {
+        install_one(file, 0);
+    } else {
+        char err[200] = "", helper[PATH_CAP];
+        st_set(VPK_RUNNING, "Preparing the updater", 0, "");
+        char dir[PATH_CAP];
+        snprintf(dir, sizeof dir, "%s", plat_pkg_dir());
+        char *sl = strrchr(dir, '/');                          /* next to the package folder, not inside it (it is emptied) */
+        if (sl) *sl = 0;
+        ls_path_join(helper, sizeof helper, dir, "updater.vpk");
+        if (!make_helper_vpk(helper, err, sizeof err)) st_set(VPK_FAILED, NULL, -1, err);
+        else if (install_one(helper, 2)) {
+            plat_remove(helper);
+            install_one(file, 1);
+        } else {
+            plat_remove(helper);
+        }
+    }
+    s_selfupdate = 0;
     free(file);
+}
+
+bool vpk_start_self_update(const char *path)
+{
+    s_selfupdate = 1;
+    if (!vpk_start(path)) { s_selfupdate = 0; return false; }
+    return true;
 }
 
 bool vpk_start(const char *path)

@@ -48,6 +48,9 @@ typedef struct {
 
 void vpk_init(void);
 bool vpk_start(const char *path);        /* false if one is already running */
+/* The new VitaSend (see plat.h, "Self-update"): installs the updater app, then unpacks the package and leaves it staged for it.
+ * Ends in VPK_DONE; the caller then starts the updater with plat_launch_app(LS_HELPER_TITLE_ID). */
+bool vpk_start_self_update(const char *path);
 bool vpk_busy(void);
 void vpk_snapshot(vpk_status *out);
 void vpk_cancel(void);                   /* only honoured while unpacking */

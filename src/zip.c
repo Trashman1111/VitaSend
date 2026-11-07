@@ -41,6 +41,12 @@ static uint32_t crc_update(uint32_t crc, const uint8_t *p, size_t n)
     return ~crc;
 }
 
+uint32_t zip_crc32(const uint8_t *p, size_t n)
+{
+    crc_init();
+    return crc_update(0, p, n);
+}
+
 void zip_close(zip_file *z)
 {
     if (z->f) fclose(z->f);

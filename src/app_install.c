@@ -13,6 +13,8 @@ static bool      s_inst_asking;          /* true: showing what is about to be in
 static screen_id s_inst_return;
 static bool      s_inst_auto;            /* started by the "install received packages automatically" setting */
 static bool      s_inst_update;          /* the package is the new version of VitaSend itself (from the update dialog) */
+static bool      s_upd_launch_failed;    /* the updater app could not be started */
+static uint64_t  s_upd_ready_at;         /* when the update became ready (it starts the updater shortly after) */
 static void      iq_draw(const xfer_status *x);
 static void      iq_input(uint32_t p);
 
@@ -33,6 +35,8 @@ void install_open(const char *path, screen_id ret)
 /* The new version of VitaSend, downloaded and checked by the update dialog: the one package that may replace the running app. */
 void install_open_update(const char *path, screen_id ret)
 {
+    s_upd_launch_failed = false;
+    s_upd_ready_at = 0;
     if (xfer_busy()) { toast("Wait until the transfer is finished"); return; }
     s_inst_return = ret;
     s_inst_auto = false;
@@ -42,6 +46,22 @@ void install_open_update(const char *path, screen_id ret)
     vpk_inspect(path, &s_inst_info);
     s_inst_asking = true;
     go(SC_INSTALL);
+}
+
+/* Main loop. The new version is staged: start the updater app, which ends VitaSend, installs it and starts it again. */
+void install_tick(uint64_t now)
+{
+    if (!s_inst_update || s_inst_asking || s_upd_launch_failed) return;
+    vpk_status vs;
+    vpk_snapshot(&vs);
+    if (vs.state != VPK_DONE) { s_upd_ready_at = 0; return; }
+    if (!s_upd_ready_at) { s_upd_ready_at = now; return; }
+    if (now - s_upd_ready_at < 1500) return;
+    ls_log("Update: starting the updater app (%s)", LS_HELPER_TITLE_ID);
+    if (!plat_launch_app(LS_HELPER_TITLE_ID)) {
+        s_upd_launch_failed = true;
+        ls_log("Update: the updater app could not be started");
+    }
 }
 
 static void install_leave(void)
@@ -77,7 +97,7 @@ void install_draw(const xfer_status *x)
                 gfx_text_fit(lx + 16, dy + 206, w - 32, 15, GW_MED, C_WARN, GA_LEFT, "This app asks for extended permissions.");
                 gfx_text_fit(lx + 16, dy + 230, w - 32, 14, GW_REG, C_TEXT, GA_LEFT, "Only install apps from sources you trust.");
             } else {
-                gfx_text_fit(lx, dy + 206, w, 15, GW_REG, C_DIM, GA_LEFT, s_inst_update ? "Your settings and received files stay. Close and start VitaSend again afterwards." : "It is unpacked on the memory card first, then added to the LiveArea.");
+                gfx_text_fit(lx, dy + 206, w, 15, GW_REG, C_DIM, GA_LEFT, s_inst_update ? "Your settings and received files stay. VitaSend closes and starts again by itself." : "It is unpacked on the memory card first, then added to the LiveArea.");
             }
             int w1 = ui_action_width(PB_CROSS, "Install");
             ui_action(lx, dy + 330, PB_CROSS, "Install");
@@ -97,13 +117,13 @@ void install_draw(const xfer_status *x)
     gfx_circle((float)(lx + 28), (float)(dy + 52), 28, tint);
     gfx_icon(vs.state == VPK_DONE ? IC_CHECK : (ended ? IC_CLOSE : IC_PACKAGE), (float)(lx + 28), (float)(dy + 52), 30, ended ? mc : C_ACCENT_HI);
     gfx_text(lx + 72, dy + 40, 22, GW_BOLD, C_TEXT, GA_LEFT,
-             vs.state == VPK_DONE ? (s_inst_update ? "VitaSend updated" : "Installed") : (vs.state == VPK_FAILED ? "Installation failed" : (vs.state == VPK_CANCELLED ? "Cancelled" : "Installing")));
+             vs.state == VPK_DONE ? (s_inst_update ? "Finishing the update" : "Installed") : (vs.state == VPK_FAILED ? "Installation failed" : (vs.state == VPK_CANCELLED ? "Cancelled" : "Installing")));
     gfx_text_fit(lx + 72, dy + 68, w - 72, 15, GW_REG, C_DIM, GA_LEFT, vs.title[0] ? vs.title : base_name(s_inst_path));
     if (s_inst_auto) gfx_text_fit(lx, dy + 262, w, 13, GW_REG, C_FAINT, GA_LEFT, "Started automatically - Settings > Install received .vpk files");
 
     if (ended) {
         gfx_text_fit(lx, dy + 128, w, 17, GW_MED, mc, GA_LEFT, vs.message);
-        if (s_inst_update && vs.state == VPK_DONE) gfx_text_fit(lx, dy + 232, w, 15, GW_REG, C_TEXT, GA_LEFT, "Close VitaSend and start it again to use the new version.");
+        if (s_inst_update && vs.state == VPK_DONE) gfx_text_fit(lx, dy + 232, w, 15, GW_REG, C_TEXT, GA_LEFT, s_upd_launch_failed ? "The updater could not be started. Close VitaSend and start it again." : "Please wait - the screen goes dark for a moment.");
     } else {
         gfx_text_fit(lx, dy + 128, w, 17, GW_MED, C_TEXT, GA_LEFT, vs.stage);
     }
@@ -142,7 +162,7 @@ void install_input(uint32_t p)
         if (p & UI_BTN_CIRCLE) install_leave();
         if (p & UI_BTN_CROSS) {
             if (!s_inst_info.ok) install_leave();
-            else if (vpk_start(s_inst_path)) s_inst_asking = false;
+            else if (s_inst_update ? vpk_start_self_update(s_inst_path) : vpk_start(s_inst_path)) s_inst_asking = false;
             else toast("Cannot start the installer");
         }
         return;
@@ -153,7 +173,7 @@ void install_input(uint32_t p)
         if ((p & UI_BTN_CIRCLE) && vs.pct < 92) vpk_cancel();
         return;
     }
-    if ((p & UI_BTN_SQUARE) && s_inst_update && vs.state == VPK_DONE) { A.quit = true; return; }
+    if ((p & UI_BTN_SQUARE) && s_inst_update && vs.state == VPK_DONE && s_upd_launch_failed) { A.quit = true; return; }
     if ((p & UI_BTN_SQUARE) && vs.state == VPK_DONE && vs.titleid[0] && plat_can_launch()) {
         if (!plat_launch_app(vs.titleid)) toast("Cannot open the app from here - use its LiveArea bubble");
         return;

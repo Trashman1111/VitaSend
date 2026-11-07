@@ -139,8 +139,32 @@ __attribute__((unused)) static bool start_services(void)
 }
 
 
+/* After a self-update: the updater app left its result in <data>/update-result.txt and is still installed (a LiveArea bubble) - say
+ * how it went, then remove it. */
+static void finish_self_update(const char *dir)
+{
+    char p[300], line[200] = "";
+    ls_path_join(p, sizeof p, dir, "update-result.txt");
+    FILE *f = fopen(p, "r");
+    if (f) {
+        if (fgets(line, sizeof line, f)) line[strcspn(line, "\r\n")] = 0;
+        fclose(f);
+        plat_remove(p);
+        if (!strcmp(line, "ok")) ls_log("Update: the updater app installed the new version (this is %s)", LS_APP_VERSION);
+        else ls_log("Update: FAILED - the updater app could not install the new version: %s", line[0] ? line : "no reason given");
+    }
+    if (plat_app_installed(LS_HELPER_TITLE_ID)) {
+        char why[160] = "";
+        if (plat_delete_app(LS_HELPER_TITLE_ID, why, sizeof why)) ls_log("Update: the updater app was removed again");
+        else ls_log("Update: the updater app could not be removed: %s", why);
+    }
+}
+
 int main(int argc, char **argv)
 {
+    /* The updater app (a copy of this program under another title id) does nothing but finish a self-update. */
+    if (plat_running_as_helper()) return plat_update_helper_run();
+
     ls_util_init();
 
     const char *announce_ip = NULL;
@@ -186,6 +210,7 @@ int main(int argc, char **argv)
     ui_init();
     if (!gfx_init()) ls_log("FAIL not enough memory for the screen");
     ls_log("%s %s starting", LS_APP_NAME, LS_APP_VERSION);
+    finish_self_update(dir);
 
     s_footer = "START Quit";
     set_status(C_WARN, "Running self tests...");
