@@ -5,6 +5,14 @@ All notable changes to VitaSend. The format follows [Keep a Changelog](https://k
 
 How the project got here, step by step, is in [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md).
 
+## [0.9.6] - 2026-11-07
+
+### Changed
+- Version bump only: this release exists to try the new in-app update (0.9.5 offers it, downloads it, checks it and installs it). No other changes.
+
+### Fixed
+- The automated tests no longer contact the real GitHub (every test instance now asks a dead local port unless a test sets up its own fake server), so a newer release can never change a test result.
+
 ## [0.9.5] - 2026-11-06
 
 ### Added
