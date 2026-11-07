@@ -5,7 +5,7 @@ All notable changes to VitaSend. The format follows [Keep a Changelog](https://k
 
 How the project got here, step by step, is in [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md).
 
-## [Unreleased]
+## [0.9.7] - 2026-11-07
 
 ### Fixed
 - **Self-update: "The system refused the package (0x80101114)".** The system installer cannot replace an app while it is running. The update now works like VitaShell's: VitaSend unpacks the new version, installs a tiny **updater app** (a copy of its own program under the title id `LSNDUPD01`, shown as "VitaSend" until removed), and closes. The updater stops everything else, installs the new version, and starts VitaSend again; at the next start VitaSend reports the result in the log (`Update: the updater app installed the new version ...` / `Update: FAILED - <reason>`) and removes the updater app. The screen goes dark for a moment; nothing needs to be pressed. Hardware-untested: if it fails, the log says why and the downloaded package in `ux0:data/VitaSend/update/` can still be installed with VitaShell.

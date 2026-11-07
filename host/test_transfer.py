@@ -66,7 +66,7 @@ def sha(b):
 # =========================================================================== the program under test
 OSK_ROWS = ["1234567890-_=+", "qwertyuiop[]()", "asdfghjkl;:'\"/", "zxcvbnm,.?!@#$", "QWERTYUIOP{}<>", "ASDFGHJKL%^&*\\", "ZXCVBNM`~|    "]
 
-VERSION = "0.9.6"
+VERSION = "0.9.7"
 SET_ROWS = {"name": 0, "pin": 1, "hide": 2, "folder": 3, "accept": 4, "autoinst": 5, "exists": 6, "theme": 7, "battery": 8, "clock": 9, "saver": 10, "sound": 11, "about": 12, "checkupd": 13, "log": 14, "quit": 15}
 
 def osk_keys(text, digits=False):
@@ -3204,7 +3204,7 @@ class FakeGitHub:
         self.vpk = b""
         self.sums = b""
         self.chunked = False
-        self.sums_name = "VitaSend-v0.9.7.vpk"
+        self.sums_name = "VitaSend-v0.9.8.vpk"
         me = self
         class H(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -3271,10 +3271,10 @@ def test_update():
     CA = os.path.join(base, "ca.pem")
     gh = FakeGitHub(base, 53790)
     new_vpk = os.path.join(ROOT, "new.vpk")
-    make_vpk(new_vpk, title="VitaSend", tid="LSND00001", ver="00.97")
+    make_vpk(new_vpk, title="VitaSend", tid="LSND00001", ver="00.98")
     gh.vpk = open(new_vpk, "rb").read()
     good = sha(gh.vpk)
-    gh.sums = f"{good}  VitaSend-v0.9.7.vpk\n".encode()
+    gh.sums = f"{good}  VitaSend-v0.9.8.vpk\n".encode()
     port = [53800]
     def vita(name, cfg=None, env=None, date="2026-11-06", delay="300", ca=CA, api=None):
         port[0] += 2
@@ -3341,7 +3341,7 @@ def test_update():
     drop(V)
 
     # ---- 5. up to date: silent at start, a message from the About box
-    gh.releases = [gh.release("v0.9.7"), gh.release("v0.9.4")]
+    gh.releases = [gh.release("v0.9.8"), gh.release("v0.9.4")]
     gh.hits.clear()
     V = vita("upd5")
     VER_NOW = VERSION
@@ -3360,17 +3360,17 @@ def test_update():
     #         (the running app cannot be replaced by the system installer: error 0x80101114 on a real Vita)
     appdir = os.path.join(ROOT, "appdir")
     old_vpk = os.path.join(ROOT, "old.vpk")
-    make_vpk(old_vpk, title="VitaSend", tid="LSND00001", ver="00.96")
+    make_vpk(old_vpk, title="VitaSend", tid="LSND00001", ver="00.97")
     zipfile.ZipFile(old_vpk).extractall(appdir)
     open(os.path.join(appdir, "eboot.bin"), "wb").write(make_eboot(False, seed=9))   # the installed (old) program differs from the new one
     old_eboot = open(os.path.join(appdir, "eboot.bin"), "rb").read()
-    gh.releases = [gh.release("v0.9.7"), gh.release("v0.9.4")]
+    gh.releases = [gh.release("v0.9.8"), gh.release("v0.9.4")]
     gh.chunked = True
     V = vita("upd6", env={"LS_APP_DIR": appdir})
-    check("v0.9.7 is offered", V.wait_screen("A new version is available", 12) and "v0.9.7" in V.screen() and "pre-release" not in V.screen(), V.screen())
+    check("v0.9.8 is offered", V.wait_screen("A new version is available", 12) and "v0.9.8" in V.screen() and "pre-release" not in V.screen(), V.screen())
     V.keys("cross")
     check("[X] downloads it (through the redirect)", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-800:])
-    check("the downloaded file is kept and checked", wait_for(lambda: os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk")), 3) and sha(open(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk"), "rb").read()) == good)
+    check("the downloaded file is kept and checked", wait_for(lambda: os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.8.vpk")), 3) and sha(open(os.path.join(V.data, "update", "VitaSend-v0.9.8.vpk"), "rb").read()) == good)
     check("the installer says what happens to settings and files", V.has("Your settings and received files stay") and V.has("starts again by itself"), V.screen())
     V.keys("cross")
     check("the update is prepared and the updater is started", V.wait_screen("Finishing the update", 20), V.screen() + V.log()[-600:])
@@ -3409,31 +3409,31 @@ def test_update():
     drop(V)
 
     # ---- 7. a wrong checksum is refused and the file deleted
-    gh.sums = f"{'0' * 64}  VitaSend-v0.9.7.vpk\n".encode()
+    gh.sums = f"{'0' * 64}  VitaSend-v0.9.8.vpk\n".encode()
     V = vita("upd7")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("a wrong checksum: refused", V.wait_screen("Download failed", 20) and V.wait_screen("checksum does not match", 2), V.screen())
-    check("... nothing stays on the card", not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk")) and not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.7.vpk.part")))
+    check("... nothing stays on the card", not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.8.vpk")) and not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.8.vpk.part")))
     check("... and 'Try again' is offered", "Try again" in V.screen(), V.screen())
-    gh.sums = f"{good}  VitaSend-v0.9.7.vpk\n".encode()
+    gh.sums = f"{good}  VitaSend-v0.9.8.vpk\n".encode()
     V.keys("square")
     check("[SQUARE] tries the download again (now with the right checksum)", V.wait_screen("Install the new VitaSend?", 20), V.screen())
     drop(V)
 
     # ---- 8. no SHA256SUMS.txt: GitHub's own digest is used; none at all: refused
-    gh.releases = [gh.release("v0.9.7", sums=False, digest=good)]
+    gh.releases = [gh.release("v0.9.8", sums=False, digest=good)]
     V = vita("upd8")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("without SHA256SUMS.txt the digest GitHub lists is used", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-500:])
     drop(V)
-    gh.releases = [gh.release("v0.9.7", sums=False)]
+    gh.releases = [gh.release("v0.9.8", sums=False)]
     V = vita("upd9")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("no checksum anywhere: the download is not trusted", V.wait_screen("Download failed", 15) and V.wait_screen("publishes no checksum", 2), V.screen())
     drop(V)
 
     # ---- 9. no .vpk on the release
-    gh.releases = [gh.release("v0.9.7", vpk=False, sums=False)]
+    gh.releases = [gh.release("v0.9.8", vpk=False, sums=False)]
     V = vita("upd10")
     V.goto_setting("about"); V.keys("cross")
     check("a release without a package: a clear message", V.wait_screen("Update check failed", 12) and V.wait_screen("no .vpk", 2), V.screen())
@@ -3441,14 +3441,14 @@ def test_update():
     drop(V)
 
     # ---- 10. certificates are really checked
-    gh.releases = [gh.release("v0.9.7")]
+    gh.releases = [gh.release("v0.9.8")]
     V = vita("upd11", ca=os.path.join(base, "evil.pem"))
     V.goto_setting("about"); V.keys("cross")
-    check("a certificate from an unknown authority is refused", V.wait_screen("Update check failed", 12) and "v0.9.7" not in V.screen(), V.screen())
+    check("a certificate from an unknown authority is refused", V.wait_screen("Update check failed", 12) and "v0.9.8" not in V.screen(), V.screen())
     check("... the log says why", wait_for(lambda: "not trusted" in V.log().lower() or "verif" in V.log().lower(), 3), V.log()[-500:])
     drop(V)
     gh2 = FakeGitHub(base, 53792, host_name="other.test")
-    gh2.releases = [gh2.release("v0.9.7")]
+    gh2.releases = [gh2.release("v0.9.8")]
     V = vita("upd12", api="localhost:53792")
     V.goto_setting("about"); V.keys("cross")
     check("a certificate for another host name is refused", V.wait_screen("Update check failed", 12) and "A new version" not in V.screen(), V.screen())
