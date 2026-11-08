@@ -168,7 +168,7 @@ static uint32_t key_mask(const char *name)
         { "up", UI_BTN_UP }, { "down", UI_BTN_DOWN }, { "left", UI_BTN_LEFT }, { "right", UI_BTN_RIGHT },
         { "cross", UI_BTN_CROSS }, { "circle", UI_BTN_CIRCLE }, { "square", UI_BTN_SQUARE },
         { "triangle", UI_BTN_TRIANGLE }, { "start", UI_BTN_START }, { "select", UI_BTN_SELECT },
-        { "l", UI_BTN_L }, { "r", UI_BTN_R },
+        { "l", UI_BTN_L }, { "r", UI_BTN_R }
     };
     for (size_t i = 0; i < sizeof t / sizeof t[0]; i++)
         if (!strcmp(name, t[i].n)) return t[i].m;

@@ -235,6 +235,7 @@ static void close_session_locked(xf_state st, const char *msg)
     if (S.nfiles > 0) {
         if (S.nfiles > 1) snprintf(h.summary, sizeof h.summary, "%.60s (+%d more)", S.files[0].name, S.nfiles - 1);
         else ls_strlcpy(h.summary, S.files[0].name, sizeof h.summary);
+        ls_strlcpy(h.path, S.files[0].path, sizeof h.path);
     }
     history_add(&h);
 

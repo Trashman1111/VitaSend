@@ -155,6 +155,7 @@ static void finish_self_update(const char *dir)
     }
     if (plat_app_installed(LS_HELPER_TITLE_ID)) {
         char why[160] = "";
+        ls_log("Update: removing the updater app ...");            /* written before the system call: if the app closes here, the log shows it */
         if (plat_delete_app(LS_HELPER_TITLE_ID, why, sizeof why)) ls_log("Update: the updater app was removed again");
         else ls_log("Update: the updater app could not be removed: %s", why);
     }
@@ -163,18 +164,23 @@ static void finish_self_update(const char *dir)
 int main(int argc, char **argv)
 {
     /* The updater app (a copy of this program under another title id) does nothing but finish a self-update. */
-    if (plat_running_as_helper()) return plat_update_helper_run();
+    if (plat_running_as_helper()) {
+        helper_screen_start();               /* "Update in progress" instead of a black screen */
+        return plat_update_helper_run();
+    }
 
     ls_util_init();
 
     const char *announce_ip = NULL;
     uint16_t    announce_port = 0, port_override = 0;
     unsigned    run_seconds = 0;
+    bool        helper_demo = false;
 #ifdef LS_HOST
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--data") && i + 1 < argc) plat_posix_set_data_dir(argv[++i]);
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) port_override = (uint16_t)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--seconds") && i + 1 < argc) run_seconds = (unsigned)atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--helper-screen")) helper_demo = true;        /* shows the updater's screen only (for pictures / tests) */
         else if (!strcmp(argv[i], "--dump-screen") && i + 1 < argc) ui_host_set_dump(argv[++i]);
         else if (!strcmp(argv[i], "--dump-ppm") && i + 1 < argc) ui_host_set_ppm(argv[++i]);
         else if (!strcmp(argv[i], "--keys") && i + 1 < argc) ui_host_set_keys(argv[++i]);
@@ -197,6 +203,13 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
 #endif
+
+    if (helper_demo) {
+        plat_init();
+        helper_screen_start();
+        plat_sleep_ms((run_seconds ? run_seconds : 3) * 1000u);
+        return 0;
+    }
 
     s_announce_ip = announce_ip;
     s_announce_port = announce_port;

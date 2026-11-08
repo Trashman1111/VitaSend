@@ -147,8 +147,9 @@ static bool inspect_open(zip_file *z, vpk_info *info)
         if (!z->e[i].is_dir) info->files++;
     info->unpacked = z->total_unpacked;
 
-    if (strcmp(info->titleid, plat_own_title_id()) == 0 && !s_allow_self) {
-        snprintf(info->err, sizeof info->err, "This is VitaSend itself - it cannot replace itself while it is running");
+    info->is_self = strcmp(info->titleid, plat_own_title_id()) == 0;
+    if (info->is_self && !s_allow_self) {
+        snprintf(info->err, sizeof info->err, "This is VitaSend itself - it cannot replace itself here; open the file in the Files tab (X) to update");
         return false;
     }
     return true;

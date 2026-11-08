@@ -30,6 +30,7 @@
 #endif
 #include <psp2/sysmodule.h>
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,18 +141,28 @@ bool plat_can_launch(void)
 }
 
 /* The VitaShell way: ask the system to start the title (twice, the first request is sometimes ignored), then leave. */
-bool plat_launch_app(const char *titleid)
-{
 #ifdef LS_HAVE_APPMGR
+/* times = how often the launch request is sent. Other apps get it twice (the first one is sometimes lost); a request for an
+ * app that is already starting can restart it, so the updater (which starts VitaSend, like VitaShell's updater starts
+ * VitaShell) sends it exactly once. */
+static bool launch_app(const char *titleid, int times)
+{
     char uri[48];
     if (!titleid || !titleid[0]) return false;
     snprintf(uri, sizeof uri, "psgm:play?titleid=%s", titleid);
-    sceKernelDelayThread(10000);
-    sceAppMgrLaunchAppByUri(0xFFFFF, uri);
-    sceKernelDelayThread(10000);
-    sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+    for (int i = 0; i < times; i++) {
+        sceKernelDelayThread(10000);
+        sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+    }
     sceKernelExitProcess(0);
     return true;
+}
+#endif
+
+bool plat_launch_app(const char *titleid)
+{
+#ifdef LS_HAVE_APPMGR
+    return launch_app(titleid, 2);
 #else
     (void)titleid;
     return false;
@@ -394,6 +405,9 @@ static int promoter_op(int op, const char *arg, char *why, size_t cap)
         res = scePromoterUtilityPromotePkgWithRif(arg, 1);
         if (res < 0) { snprintf(why, cap, "The system refused the package (0x%08X)", (unsigned)res); goto out; }
     } else {
+#ifdef LS_HAVE_APPMGR
+        sceAppMgrDestroyOtherApp();         /* like VitaShell before it removes its updater: no other app may still be running */
+#endif
         res = scePromoterUtilityDeletePkg(arg);
         if (res < 0) { snprintf(why, cap, "The system could not remove %s (0x%08X)", arg, (unsigned)res); goto out; }
     }
@@ -455,13 +469,32 @@ bool plat_running_as_helper(void)
 #endif
 }
 
+/* The updater has no log of its own: its steps are added to VitaSend's log.txt (when VitaSend starts again it appends to it). */
+static void helper_log(const char *fmt, ...)
+{
+    char line[220];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof line - 2, fmt, ap);
+    va_end(ap);
+    strcat(line, "\n");
+    SceUID fd = sceIoOpen("ux0:data/VitaSend/log.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0777);
+    if (fd >= 0) {
+        sceIoWrite(fd, line, strlen(line));
+        sceIoClose(fd);
+    }
+}
+
 int plat_update_helper_run(void)
 {
 #ifdef LS_HAVE_APPMGR
     char why[200] = "";
+    helper_log("Updater app: started");
     sceAppMgrDestroyOtherApp();                      /* ends VitaSend, so that its files can be replaced */
     sceKernelDelayThread(300 * 1000);
+    helper_log("Updater app: installing the new version");
     int r = plat_promote(plat_pkg_dir(), why, sizeof why);
+    helper_log(r == 0 ? "Updater app: installed" : "Updater app: FAILED - %s", why);
     SceUID fd = sceIoOpen("ux0:data/VitaSend/update-result.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
     if (fd >= 0) {
         char msg[260];
@@ -470,7 +503,9 @@ int plat_update_helper_run(void)
         sceIoWrite(fd, msg, strlen(msg));
         sceIoClose(fd);
     }
-    plat_launch_app(LS_TITLE_ID);                    /* VitaSend again - the new version, if all went well */
+    sceKernelDelayThread(500 * 1000);                /* let the system settle (and the screen be seen) before the next start */
+    helper_log("Updater app: starting VitaSend");
+    launch_app(LS_TITLE_ID, 1);                      /* VitaSend again - the new version, if all went well */
     sceKernelExitProcess(0);
 #endif
     return 0;

@@ -16,7 +16,7 @@ void settings_reset(void) { memset(&s_setcur, 0, sizeof s_setcur); }
 enum { ST_NAME, ST_PIN, ST_HIDE,                                  /* This device        */
        ST_FOLDER, ST_ACCEPT, ST_AUTOINST, ST_EXISTS,              /* Receiving          */
        ST_THEME, ST_BATTERY, ST_CLOCK, ST_SAVER, ST_SOUND,        /* Display and sound  */
-       ST_ABOUT, ST_CHECKUPD, ST_LOG, ST_QUIT,                    /* About              */
+       ST_ABOUT, ST_CHECKUPD, ST_CLEARHIST, ST_LOG, ST_QUIT,                    /* About              */
        ST_COUNT };
 
 #define SET_TOP    CONTENT_Y
@@ -93,7 +93,7 @@ void settings_draw(const xfer_status *x)
         "Device name", "PIN to send to this device", "Hide IP address and fingerprint",
         "Save received files in", "Quick Save", "Install received .vpk files", "When a received file already exists",
         "Colours", "Battery indicator", "Clock", "Screensaver", "Sound",
-        "", "Check for updates at start", "Log", "" };
+        "", "Check for updates at start", "Clear history", "Log", "" };
     char value[ST_COUNT][260];
     ls_strlcpy(value[ST_NAME], g_id.alias, sizeof value[0]);
     ls_strlcpy(value[ST_PIN], st.pin[0] ? st.pin : "Off", sizeof value[0]);
@@ -109,6 +109,11 @@ void settings_draw(const xfer_status *x)
     ls_strlcpy(value[ST_SOUND], st.sound ? "On - a short chime when a transfer or an installation has finished" : "Off - silent", sizeof value[0]);
     ls_strlcpy(value[ST_ABOUT], "", sizeof value[0]);
     ls_strlcpy(value[ST_CHECKUPD], st.check_updates ? "On - looks for a new version on GitHub when VitaSend starts (asks once a day at most)" : "Off - only when you check in the About box", sizeof value[0]);
+    {
+        int hn = history_count();
+        if (hn) snprintf(value[ST_CLEARHIST], sizeof value[0], "Remove the %d entr%s from the History list (asks first)", hn, hn == 1 ? "y" : "ies");
+        else ls_strlcpy(value[ST_CLEARHIST], "The History list is empty", sizeof value[0]);
+    }
     ls_strlcpy(value[ST_LOG], "Show what the app has been doing", sizeof value[0]);
     ls_strlcpy(value[ST_QUIT], "Quit VitaSend", sizeof value[0]);
 
@@ -156,6 +161,7 @@ void settings_draw(const xfer_status *x)
     if (s_setcur.sel == ST_ACCEPT || s_setcur.sel == ST_AUTOINST) snprintf(info, sizeof info, "Press X to choose. Quick Save and automatic installation trust the name a sender announces.");
     else if (s_setcur.sel == ST_EXISTS || s_setcur.sel == ST_SAVER) snprintf(info, sizeof info, "Press X to choose from a list.");
     else if (s_setcur.sel == ST_ABOUT) snprintf(info, sizeof info, "Press X to look for a new version of VitaSend on GitHub now.");
+    else if (s_setcur.sel == ST_CLEARHIST) snprintf(info, sizeof info, "Press X to remove all entries of the History tab. You are asked before anything is removed; received files are not touched.");
     else if (s_setcur.sel == ST_CHECKUPD || s_setcur.sel == ST_HIDE) snprintf(info, sizeof info, "Press X to switch.");
     else if (s_setcur.sel == ST_BATTERY || s_setcur.sel == ST_CLOCK) snprintf(info, sizeof info, "Press X to switch. Shown at the top right of every page; the time is the Vita's own clock.");
     else snprintf(info, sizeof info, "Port %u - edit config.json on the memory card to change it.", g_id.port);
@@ -197,6 +203,10 @@ void settings_input(uint32_t p)
             break;
         case ST_ABOUT:    upd_ui_open(true, SC_SETTINGS); break;
         case ST_CHECKUPD: settings_set_check_updates(!st.check_updates); break;
+        case ST_CLEARHIST:
+            if (history_count()) confirm_open(CF_CLEAR_HISTORY, SC_SETTINGS);
+            else toast("The History list is already empty");
+            break;
         case ST_LOG:    go(SC_LOG); break;
         case ST_QUIT:   confirm_open(CF_QUIT, SC_SETTINGS); break;
         }

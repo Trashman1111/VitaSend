@@ -5,10 +5,23 @@ All notable changes to VitaSend. The format follows [Keep a Changelog](https://k
 
 How the project got here, step by step, is in [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md).
 
+## [0.9.8] - 2026-11-08
+
+### Added
+- **Settings > Clear history** removes the History list. A window asks first (**X** Yes / **O** No) and says how many entries will go; received files are not touched.
+- **History > X on a file** opens the Files tab in the folder of that file, with the file selected. If the file is gone the folder opens with a note; if the folder is gone, the nearest folder that exists. Text messages still open as messages. History entries now keep the location of their first file (older entries have none and say so).
+- **A VitaSend package you open yourself updates through the updater app too.** A .vpk of VitaSend (from the Files tab: **X**, or a file you received) used to be refused with "cannot replace itself"; now it asks *Install the new VitaSend?* and runs the same updater-app procedure as the in-app update. Packages that arrive in a queue (received .vpk files, also with automatic installation) are still never installed over VitaSend by themselves: the message says to open the file in the Files tab.
+- **The update window says "Please do not close this window".** Once the new version is unpacked and the updater app is about to start, the window shows that notice and no buttons any more (it used to offer *X Close* and *SQUARE Close VitaSend*, which could interrupt the update). The buttons only come back if the updater app cannot be started.
+- **The updater app shows a screen** (VitaSend logo and name, *Update in progress*, a spinner, and "do not turn off your Vita") instead of a black screen.
+
+### Fixed
+- **Self-update: VitaSend closed again right after the restart.** The updater asked the system to start VitaSend twice in a row; a second request for an app that is already starting can restart it. It now asks once, like VitaShell's updater, after a short pause (checked on a real Vita: VitaSend stays open after the update). Before the updater app is removed, other apps are ended first (as VitaShell does).
+- The updater app now writes its steps to `log.txt` (`Updater app: started / installing / installed / FAILED - ... / starting VitaSend`), so a failed or interrupted update can be followed step by step.
+
 ## [0.9.7] - 2026-11-07
 
 ### Fixed
-- **Self-update: "The system refused the package (0x80101114)".** The system installer cannot replace an app while it is running. The update now works like VitaShell's: VitaSend unpacks the new version, installs a tiny **updater app** (a copy of its own program under the title id `LSNDUPD01`, shown as "VitaSend" until removed), and closes. The updater stops everything else, installs the new version, and starts VitaSend again; at the next start VitaSend reports the result in the log (`Update: the updater app installed the new version ...` / `Update: FAILED - <reason>`) and removes the updater app. The screen goes dark for a moment; nothing needs to be pressed. Hardware-untested: if it fails, the log says why and the downloaded package in `ux0:data/VitaSend/update/` can still be installed with VitaShell.
+- **Self-update: "The system refused the package (0x80101114)".** The system installer cannot replace an app while it is running. The update now works like VitaShell's: VitaSend unpacks the new version, installs a tiny **updater app** (a copy of its own program under the title id `LSNDUPD01`, shown as "VitaSend" until removed), and closes. The updater stops everything else, installs the new version, and starts VitaSend again; at the next start VitaSend reports the result in the log (`Update: the updater app installed the new version ...` / `Update: FAILED - <reason>`) and removes the updater app. The screen goes dark for a moment; nothing needs to be pressed. Verified on a real Vita (updating 0.9.7 to 0.9.8 and the restart afterwards worked). If it ever fails, the log says why and the downloaded package in `ux0:data/VitaSend/update/` can still be installed with VitaShell.
 - Test: the "accept / reject a request" steps no longer fail on a slow machine when the answer key arrives in the very frame the dialog appears (seen once on GitHub's runner).
 
 ### Changed

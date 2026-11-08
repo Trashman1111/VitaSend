@@ -34,7 +34,7 @@ LOCAL_IP = _local_ip()
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
 ap.add_argument("--binary", default=os.path.join(HERE, "localsend-host"))
-ap.add_argument("--only", default="", choices=["", "recv", "send", "extra", "install", "privacy", "theme", "touch", "migrate", "files", "exists", "retry", "queue", "polish", "dpad", "x11", "x13", "move", "wifi", "view", "update", "fileops", "shots"])
+ap.add_argument("--only", default="", choices=["", "recv", "send", "extra", "install", "privacy", "theme", "touch", "migrate", "files", "exists", "retry", "queue", "polish", "dpad", "x11", "x13", "move", "wifi", "view", "update", "fileops", "history", "shots"])
 ap.add_argument("--shots-dir", default=os.path.join(HERE, "..", "docs", "screens"), help="with --only shots: where the pictures go")
 ap.add_argument("--keep", action="store_true")
 args = ap.parse_args()
@@ -66,7 +66,7 @@ def sha(b):
 # =========================================================================== the program under test
 OSK_ROWS = ["1234567890-_=+", "qwertyuiop[]()", "asdfghjkl;:'\"/", "zxcvbnm,.?!@#$", "QWERTYUIOP{}<>", "ASDFGHJKL%^&*\\", "ZXCVBNM`~|    "]
 
-VERSION = "0.9.7"
+VERSION = "0.9.8"
 SET_ROWS = {"name": 0, "pin": 1, "hide": 2, "folder": 3, "accept": 4, "autoinst": 5, "exists": 6, "theme": 7, "battery": 8, "clock": 9, "saver": 10, "sound": 11, "about": 12, "checkupd": 13, "log": 14, "quit": 15}
 
 def osk_keys(text, digits=False):
@@ -121,7 +121,7 @@ def osk_keys_unicode(text):
     return keys
 
 class Vita:
-    def __init__(self, name, port, peer_port, config=None, browse=None, seconds=900, extra=None, env=None, ready=True):
+    def __init__(self, name, port, peer_port, config=None, browse=None, seconds=900, extra=None, env=None, ready=True, seed=None):
         self.name, self.port = name, port
         self.dir = os.path.join(ROOT, name)
         self.data = os.path.join(self.dir, "data")
@@ -130,6 +130,7 @@ class Vita:
         cfg = {"receiveDir": self.recv}
         cfg.update(config or {})
         json.dump(cfg, open(os.path.join(self.data, "config.json"), "w"))
+        for fn, content in (seed or {}).items(): open(os.path.join(self.data, fn), "w").write(content)     # files in place before the program starts
         self.screen_file = os.path.join(self.dir, "screen.txt")
         self.fifo = os.path.join(self.dir, "keys")
         self.log_path = os.path.join(self.dir, "out.log")
@@ -431,6 +432,7 @@ def test_receive():
     check("[X] closes the result and returns home", V.wait_screen("This device", 5))
     h = V.history()
     check("history has the finished receive", any(x["status"] == 0 and not x["out"] and x["peer"] == "Banana PC" and x["files"] == 2 for x in h), h)
+    check("... and remembers where the first file was saved (History > X shows it in Files)", any(x.get("path") == p1 for x in h if x["peer"] == "Banana PC" and not x["out"]), h)
 
     # session is over -> new one allowed, old tokens dead
     st, _ = upload(port, sid, "id-1", tok["id-1"], f1)
@@ -898,6 +900,7 @@ def test_send():
     check("uploaded bytes are identical", R.uploads.get(ids["a-photo.jpg"]) == A and R.uploads.get(ids["b-note.txt"]) == B,
           {k: len(v) for k, v in R.uploads.items()})
     check("history has the finished send", wait_for(lambda: any(h["out"] and h["status"] == 0 and h["files"] == 2 and h["peer"] == "Fake Phone" for h in V.history()), 5), V.history())
+    check("... and remembers where the first file was read from", any(h["out"] and h["peer"] == "Fake Phone" and h.get("path", "").startswith(src) and h["path"].endswith(("a-photo.jpg", "c.bin", "b-note.txt", "d.bin")) for h in V.history()), V.history())
     V.finish()
 
     # ---- a whole folder (recursive)
@@ -1177,11 +1180,18 @@ def test_install():
 
     # ---- broken packages
     for fname, why, label in (("c_noeboot.vpk", "eboot.bin", "no eboot.bin"), ("f_notzip.vpk", "Not a VPK/ZIP", "not a zip"),
-                              ("g_self.vpk", "cannot replace itself", "this very app"), ("j_nosfo.vpk", "param.sfo", "no param.sfo")):
+                              ("j_nosfo.vpk", "param.sfo", "no param.sfo")):
         check(f"cursor on {fname}", files_row(V, fname), V.screen())
         V.keys("cross")
         check(f"{label}: refused with a reason", V.wait_screen("Cannot install this package", 5) and why in V.screen(), V.screen())
         V.keys("cross"); V.wait_screen("screen=files", 3)
+    # ---- VitaSend's own package (opened from the Files tab): not refused any more, it goes through the updater app
+    check("cursor on g_self.vpk", files_row(V, "g_self.vpk"), V.screen())
+    V.keys("cross")
+    check("VitaSend's own package is offered as an update (through the updater app)", V.wait_screen("Install the new VitaSend?", 5) and "LSND00001" in V.screen() and "starts again by itself" in V.screen(), V.screen())
+    V.keys("cross")
+    check("(no installed app files in this test: it fails with a clear reason, VitaSend keeps running)", V.wait_screen("Installation failed", 10) and V.proc.poll() is None, V.screen())
+    V.keys("cross"); V.wait_screen("screen=files", 3)
     check("cursor on d_evil.vpk", files_row(V, "d_evil.vpk"), V.screen())
     V.keys("cross"); V.wait_screen("Install this app?", 5); V.keys("cross")
     check("a package with a '..' path is refused while unpacking", V.wait_screen("Installation failed", 20) and "Unsafe file name" in V.screen(), V.screen())
@@ -1965,7 +1975,7 @@ def test_touch():
     check("History opens by tap", V.wait_screen("History", 4))
     V.tap(500, 120)
     time.sleep(0.4)
-    check("tapping a history entry is harmless", "tab=History " in V.screen())
+    check("tapping a history entry does what X does: its file is shown in the Files tab", V.wait_screen("tab=Files screen=files", 4), V.screen()[:200])
 
     check("no sanitizer errors during the touch tests", not sanitizer_clean([V]), sanitizer_clean([V]))
     V.stop(); VITAS.remove(V)
@@ -3048,6 +3058,78 @@ def test_view():
     check("no sanitizer errors in the viewer tests", not bad, bad)
 
 
+def test_history_ui():
+    print("== HISTORY: X shows a file in the Files tab, Settings > Clear history asks first")
+    recv = os.path.join(ROOT, "hist", "received")
+    os.makedirs(os.path.join(recv, "sub"))
+    os.makedirs(os.path.join(recv, "other"))
+    for n in ("alpha.txt", "photo.jpg", "zeta.txt"): open(os.path.join(recv, "sub", n), "w").write("x")
+    entries = [   # oldest first; the page shows the newest on top
+        {"time": 1700000000, "out": False, "status": 0, "isText": True, "peer": "Phone", "files": 1, "bytes": 0, "summary": "hello there", "text": "hello there"},
+        {"time": 1700000100, "out": False, "status": 0, "isText": False, "peer": "Phone", "files": 1, "bytes": 1, "summary": "old.txt", "path": os.path.join(recv, "vanished", "old.txt")},
+        {"time": 1700000200, "out": True, "status": 0, "isText": False, "peer": "Laptop", "files": 1, "bytes": 1, "summary": "nolocation.bin"},
+        {"time": 1700000300, "out": False, "status": 0, "isText": False, "peer": "Tablet", "files": 1, "bytes": 1, "summary": "gone.txt", "path": os.path.join(recv, "other", "gone.txt")},
+        {"time": 1700000400, "out": False, "status": 0, "isText": False, "peer": "Desktop", "files": 1, "bytes": 1, "summary": "photo.jpg", "path": os.path.join(recv, "sub", "photo.jpg")},
+    ]
+    V = Vita("hist", 53840, 53841, config={"alias": "HistUI", "screensaver": 0}, seed={"history.json": json.dumps(entries)})
+    VITAS.append(V)
+    V.keys("r", "r")
+    check("History tab: five entries", V.wait_screen("tab=History", 6) and "5 entries" in V.screen(), V.screen())
+    check("the hint offers X Show in Files for a file entry", "Show in Files" in V.screen(), V.screen())
+    def back_to_history(n):           # from Files back to the History tab (the cursor starts at the top again), then n entries down
+        V.keys("l"); V.wait_screen("tab=History", 5); V.keys(*(["down"] * n)); time.sleep(0.5)
+    V.keys("cross")
+    check("X opens the Files tab in the folder of the file", V.wait_screen("tab=Files screen=files", 5) and "alpha.txt" in V.screen() and "zeta.txt" in V.screen(), V.screen())
+    check("... with the cursor on that file", any(l.startswith(">") and "photo.jpg" in l for l in V.screen().splitlines()), V.screen())
+    back_to_history(1)
+    V.keys("cross")
+    check("an entry whose file is gone: its folder is shown, with a note", V.wait_screen("tab=Files screen=files", 5) and V.wait_screen("file is no longer there", 3) and "alpha.txt" not in "".join(l for l in V.screen().splitlines() if l.startswith(">")), V.screen())
+    back_to_history(2)
+    V.keys("cross")
+    check("an entry without a saved location says so", V.wait_screen("No location was saved", 4) and "tab=History" in V.screen(), V.screen())
+    V.keys("down")                    # (the entry from the vanished folder is the 4th)
+    V.keys("cross")
+    check("a vanished folder: the nearest existing folder opens, with a note", V.wait_screen("tab=Files screen=files", 5) and V.wait_screen("That folder is no longer there", 3), V.screen())
+    back_to_history(4)
+    check("a message keeps its old hint", "Read message" in V.screen(), V.screen())
+    V.keys("cross")
+    check("... and X shows the text", V.wait_screen("hello there", 4) and V.wait_screen("Message from Phone", 2), V.screen())
+    V.keys("circle")
+
+    # ---- Settings > Clear history
+    V.keys("r", "r")                    # History -> Files -> Settings
+    check("Settings tab", V.wait_screen("tab=Settings", 5), V.screen())
+    if "sidebar" in V.screen(): V.keys("right")
+    V.keys(*(["down"] * 14))
+    check("the Clear history row says how many entries", V.wait_screen("Clear history", 4) and V.wait_screen("Remove the 5 entries", 4), V.screen())
+    V.keys("cross")
+    check("X asks first", V.wait_screen("Clear history?", 4) and V.wait_screen("Remove all 5 entries", 2), V.screen())
+    V.keys("circle")
+    check("O: nothing is removed", V.wait_screen("tab=Settings", 4) and len(V.history()) == 5 and "Remove the 5 entries" in V.screen(), V.screen())
+    V.keys("cross"); V.wait_screen("Clear history?", 4); V.keys("cross")
+    check("X (Yes): the history is cleared", V.wait_screen("History cleared", 4) and wait_for(lambda: V.history() == [], 4), V.screen() + str(V.history()))
+    check("... and the row now says the list is empty", V.wait_screen("The History list is empty", 4), V.screen())
+    V.keys("cross")
+    check("clearing an empty list asks nothing", V.wait_screen("already empty", 4) and "Clear history?" not in V.screen(), V.screen())
+    V.keys("l", "l")                    # Settings -> Files -> History
+    V.wait_screen("tab=History", 5)
+    check("the History tab is empty", V.wait_screen("Nothing yet", 4), V.screen())
+
+def test_helper_screen():
+    print("== UPDATER APP SCREEN: 'Update in progress' with the logo and the name instead of a black screen")
+    d = os.path.join(ROOT, "helperscreen")
+    os.makedirs(d)
+    out = os.path.join(d, "screen.txt")
+    ppm = os.path.join(d, "screen.ppm")
+    r = subprocess.run([args.binary, "--helper-screen", "--seconds", "2", "--dump-screen", out, "--dump-ppm", ppm],
+                       env=dict(os.environ, ASAN_OPTIONS="detect_leaks=0"), capture_output=True, timeout=30)
+    txt = open(out).read() if os.path.exists(out) else ""
+    check("the updater screen runs and ends", r.returncode == 0, r.stderr.decode()[-300:])
+    check("it shows the name and 'Update in progress'", "VitaSend" in txt and "Update in progress" in txt, txt)
+    check("... and tells the user not to switch off and that VitaSend comes back", "do not turn off" in txt and "starts again by itself" in txt, txt)
+    px = open(ppm, "rb").read() if os.path.exists(ppm) else b""
+    check("it is a real picture (not black): many different colours", len(set(px[20::997])) > 8, len(px))
+
 def test_fileops():
     print("== FILE OPS: deleting with a progress bar (and stopping it), unzipping a zip file (progress, safety, cancel)")
     recv = os.path.join(ROOT, "fops", "received")
@@ -3204,7 +3286,7 @@ class FakeGitHub:
         self.vpk = b""
         self.sums = b""
         self.chunked = False
-        self.sums_name = "VitaSend-v0.9.8.vpk"
+        self.sums_name = "VitaSend-v0.9.9.vpk"
         me = self
         class H(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -3271,10 +3353,10 @@ def test_update():
     CA = os.path.join(base, "ca.pem")
     gh = FakeGitHub(base, 53790)
     new_vpk = os.path.join(ROOT, "new.vpk")
-    make_vpk(new_vpk, title="VitaSend", tid="LSND00001", ver="00.98")
+    make_vpk(new_vpk, title="VitaSend", tid="LSND00001", ver="00.99")
     gh.vpk = open(new_vpk, "rb").read()
     good = sha(gh.vpk)
-    gh.sums = f"{good}  VitaSend-v0.9.8.vpk\n".encode()
+    gh.sums = f"{good}  VitaSend-v0.9.9.vpk\n".encode()
     port = [53800]
     def vita(name, cfg=None, env=None, date="2026-11-06", delay="300", ca=CA, api=None):
         port[0] += 2
@@ -3288,12 +3370,12 @@ def test_update():
     today = 20261106
 
     # ---- 1. start-up: the newest release counts even when it is a pre-release; drafts do not
-    gh.releases = [gh.release("v0.10.0", draft=True), gh.release("v0.9.9", pre=True), gh.release("v0.9.4")]
+    gh.releases = [gh.release("v0.10.0", draft=True), gh.release("v0.9.10", pre=True), gh.release("v0.9.4")]
     gh.hits.clear()
     V = vita("upd1")
     check("the check at start finds the newest release by itself", V.wait_screen("screen=update", 12) and V.wait_screen("A new version is available", 5), V.screen() + V.log()[-600:])
     scr = V.screen()
-    check("a pre-release is offered (and labelled), a draft is not", "v0.9.9" in scr and "pre-release" in scr and "v0.10.0" not in scr, scr)
+    check("a pre-release is offered (and labelled), a draft is not", "v0.9.10" in scr and "pre-release" in scr and "v0.10.0" not in scr, scr)
     check("it shows what is installed and the size", "you have " + VERSION in scr and "MB" in scr, scr)
     check("the dialog offers Download and install / Not now", "Download and install" in scr and "Not now" in scr, scr)
     check("the question is remembered for today", wait_for(lambda: V.config().get("updateAskedDay") == today, 5), V.config())
@@ -3317,10 +3399,10 @@ def test_update():
     check("[O] on it returns to Settings", V.wait_screen("screen=settings", 5), V.screen())
     drop(V)
 
-    # ---- 3. the next day: asked again; the highest number wins (0.10.0 is above 0.9.9)
-    gh.releases = [gh.release("v0.9.9", pre=True), gh.release("v0.10.0", pre=True), gh.release("v0.9.4")]
+    # ---- 3. the next day: asked again; the highest number wins (0.10.0 is above 0.9.10)
+    gh.releases = [gh.release("v0.9.10", pre=True), gh.release("v0.10.0", pre=True), gh.release("v0.9.4")]
     V = vita("upd3", cfg={"updateAskedDay": today}, date="2026-11-07")
-    check("the next day: asked again, and 0.10.0 is above 0.9.9", V.wait_screen("A new version is available", 12) and "v0.10.0" in V.screen(), V.screen())
+    check("the next day: asked again, and 0.10.0 is above 0.9.10", V.wait_screen("A new version is available", 12) and "v0.10.0" in V.screen(), V.screen())
     check("... today's date is stored", wait_for(lambda: V.config().get("updateAskedDay") == 20261107, 5), V.config())
     drop(V)
 
@@ -3341,7 +3423,7 @@ def test_update():
     drop(V)
 
     # ---- 5. up to date: silent at start, a message from the About box
-    gh.releases = [gh.release("v0.9.8"), gh.release("v0.9.4")]
+    gh.releases = [gh.release("v0.9.9"), gh.release("v0.9.4")]
     gh.hits.clear()
     V = vita("upd5")
     VER_NOW = VERSION
@@ -3360,20 +3442,22 @@ def test_update():
     #         (the running app cannot be replaced by the system installer: error 0x80101114 on a real Vita)
     appdir = os.path.join(ROOT, "appdir")
     old_vpk = os.path.join(ROOT, "old.vpk")
-    make_vpk(old_vpk, title="VitaSend", tid="LSND00001", ver="00.97")
+    make_vpk(old_vpk, title="VitaSend", tid="LSND00001", ver="00.98")
     zipfile.ZipFile(old_vpk).extractall(appdir)
     open(os.path.join(appdir, "eboot.bin"), "wb").write(make_eboot(False, seed=9))   # the installed (old) program differs from the new one
     old_eboot = open(os.path.join(appdir, "eboot.bin"), "rb").read()
-    gh.releases = [gh.release("v0.9.8"), gh.release("v0.9.4")]
+    gh.releases = [gh.release("v0.9.9"), gh.release("v0.9.4")]
     gh.chunked = True
     V = vita("upd6", env={"LS_APP_DIR": appdir})
-    check("v0.9.8 is offered", V.wait_screen("A new version is available", 12) and "v0.9.8" in V.screen() and "pre-release" not in V.screen(), V.screen())
+    check("v0.9.9 is offered", V.wait_screen("A new version is available", 12) and "v0.9.9" in V.screen() and "pre-release" not in V.screen(), V.screen())
     V.keys("cross")
     check("[X] downloads it (through the redirect)", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-800:])
-    check("the downloaded file is kept and checked", wait_for(lambda: os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.8.vpk")), 3) and sha(open(os.path.join(V.data, "update", "VitaSend-v0.9.8.vpk"), "rb").read()) == good)
+    check("the downloaded file is kept and checked", wait_for(lambda: os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.9.vpk")), 3) and sha(open(os.path.join(V.data, "update", "VitaSend-v0.9.9.vpk"), "rb").read()) == good)
     check("the installer says what happens to settings and files", V.has("Your settings and received files stay") and V.has("starts again by itself"), V.screen())
     V.keys("cross")
     check("the update is prepared and the updater is started", V.wait_screen("Finishing the update", 20), V.screen() + V.log()[-600:])
+    scr = V.screen()
+    check("... it says not to close the window, and offers no buttons to close anything", "do not close this window" in scr and "Close VitaSend" not in scr and "X Close" not in scr, scr)
     check("... VitaSend ends itself (the updater app takes over)", wait_for(lambda: V.proc.poll() is not None, 10), V.log()[-500:])
     inst = os.path.join(V.data, "installed")
     check("the updater app is installed: a copy of the running eboot.bin under another title id",
@@ -3408,32 +3492,46 @@ def test_update():
     check("... and the log has the result", wait_for(lambda: "Install: FAILED" in V.log(), 3), V.log()[-400:])
     drop(V)
 
+    # the same, started from a .vpk file in the Files tab (no GitHub involved)
+    V = vita("upd6d", cfg={"checkUpdates": False}, env={"LS_APP_DIR": appdir})
+    os.makedirs(V.recv, exist_ok=True)
+    shutil.copy(new_vpk, os.path.join(V.recv, "VitaSend-new.vpk"))
+    V.keys("r", "r", "r")
+    check("Files tab shows the VitaSend package", V.wait_screen("tab=Files screen=files", 6) and V.wait_screen("VitaSend-new.vpk", 5), V.screen())
+    V.keys("cross")
+    check("X on it: 'Install the new VitaSend?' (not refused)", V.wait_screen("Install the new VitaSend?", 6), V.screen())
+    V.keys("cross")
+    check("the updater app takes over from there", V.wait_screen("Finishing the update", 20) and wait_for(lambda: V.proc.poll() is not None, 10), V.screen() + V.log()[-500:])
+    inst2 = os.path.join(V.data, "installed")
+    check("... and the new version is installed", os.path.isdir(os.path.join(inst2, "LSND00001")) and open(os.path.join(inst2, "LSND00001", "eboot.bin"), "rb").read() != old_eboot, os.listdir(inst2) if os.path.isdir(inst2) else "no installed dir")
+    VITAS.remove(V)
+
     # ---- 7. a wrong checksum is refused and the file deleted
-    gh.sums = f"{'0' * 64}  VitaSend-v0.9.8.vpk\n".encode()
+    gh.sums = f"{'0' * 64}  VitaSend-v0.9.9.vpk\n".encode()
     V = vita("upd7")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("a wrong checksum: refused", V.wait_screen("Download failed", 20) and V.wait_screen("checksum does not match", 2), V.screen())
-    check("... nothing stays on the card", not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.8.vpk")) and not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.8.vpk.part")))
+    check("... nothing stays on the card", not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.9.vpk")) and not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.9.vpk.part")))
     check("... and 'Try again' is offered", "Try again" in V.screen(), V.screen())
-    gh.sums = f"{good}  VitaSend-v0.9.8.vpk\n".encode()
+    gh.sums = f"{good}  VitaSend-v0.9.9.vpk\n".encode()
     V.keys("square")
     check("[SQUARE] tries the download again (now with the right checksum)", V.wait_screen("Install the new VitaSend?", 20), V.screen())
     drop(V)
 
     # ---- 8. no SHA256SUMS.txt: GitHub's own digest is used; none at all: refused
-    gh.releases = [gh.release("v0.9.8", sums=False, digest=good)]
+    gh.releases = [gh.release("v0.9.9", sums=False, digest=good)]
     V = vita("upd8")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("without SHA256SUMS.txt the digest GitHub lists is used", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-500:])
     drop(V)
-    gh.releases = [gh.release("v0.9.8", sums=False)]
+    gh.releases = [gh.release("v0.9.9", sums=False)]
     V = vita("upd9")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("no checksum anywhere: the download is not trusted", V.wait_screen("Download failed", 15) and V.wait_screen("publishes no checksum", 2), V.screen())
     drop(V)
 
     # ---- 9. no .vpk on the release
-    gh.releases = [gh.release("v0.9.8", vpk=False, sums=False)]
+    gh.releases = [gh.release("v0.9.9", vpk=False, sums=False)]
     V = vita("upd10")
     V.goto_setting("about"); V.keys("cross")
     check("a release without a package: a clear message", V.wait_screen("Update check failed", 12) and V.wait_screen("no .vpk", 2), V.screen())
@@ -3441,14 +3539,14 @@ def test_update():
     drop(V)
 
     # ---- 10. certificates are really checked
-    gh.releases = [gh.release("v0.9.8")]
+    gh.releases = [gh.release("v0.9.9")]
     V = vita("upd11", ca=os.path.join(base, "evil.pem"))
     V.goto_setting("about"); V.keys("cross")
-    check("a certificate from an unknown authority is refused", V.wait_screen("Update check failed", 12) and "v0.9.8" not in V.screen(), V.screen())
+    check("a certificate from an unknown authority is refused", V.wait_screen("Update check failed", 12) and "v0.9.9" not in V.screen(), V.screen())
     check("... the log says why", wait_for(lambda: "not trusted" in V.log().lower() or "verif" in V.log().lower(), 3), V.log()[-500:])
     drop(V)
     gh2 = FakeGitHub(base, 53792, host_name="other.test")
-    gh2.releases = [gh2.release("v0.9.8")]
+    gh2.releases = [gh2.release("v0.9.9")]
     V = vita("upd12", api="localhost:53792")
     V.goto_setting("about"); V.keys("cross")
     check("a certificate for another host name is refused", V.wait_screen("Update check failed", 12) and "A new version" not in V.screen(), V.screen())
@@ -3463,7 +3561,7 @@ def test_update():
     drop(V)
 
     # ---- 12. the automatic question never interrupts a transfer request
-    gh.releases = [gh.release("v0.9.9")]
+    gh.releases = [gh.release("v0.9.10")]
     V = vita("upd14", delay="2500")
     files = [file_entry("id-1", "hello.bin", rnd(2000, 1))]
     t, box = prepare_async(V.port, files, alias="Banana PC")
@@ -3503,6 +3601,7 @@ try:
     if args.only in ("", "view"): test_view()
     if args.only in ("", "update"): test_update()
     if args.only in ("", "fileops"): test_fileops()
+    if args.only in ("", "history"): test_history_ui(); test_helper_screen()
 finally:
     finish_all()
 

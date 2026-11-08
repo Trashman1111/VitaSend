@@ -18,4 +18,8 @@ typedef struct {
 /* Returns when the user quits (or run_seconds elapsed, or g_quit was set). */
 void app_run(const app_opts *opts);
 
+/* The updater app (a copy of this program that installs a new version): shows the logo, the name and "Update in progress"
+ * in a thread of its own until the process ends. */
+void helper_screen_start(void);
+
 #endif

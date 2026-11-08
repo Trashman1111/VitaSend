@@ -32,6 +32,7 @@ void under_tab(void *ctx)
 
 void go(screen_id sc)
 {
+
     /* an event that needs the user (a request, a message, a PIN...) ends the screensaver; a transfer that simply starts, or an
      * installation that starts by itself, does not - the screensaver shows its progress */
     if (A.saver && sc != A.sc && sc != SC_TRANSFER && sc != SC_INSTALL) saver_stop("screen change");

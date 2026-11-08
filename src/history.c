@@ -34,6 +34,7 @@ static void save_locked(void)
         jw_kint(&w, "files", e->nfiles);
         jw_kint(&w, "bytes", (int64_t)e->bytes);
         jw_kstr(&w, "summary", e->summary);
+        if (e->path[0]) jw_kstr(&w, "path", e->path);
         if (e->is_text) jw_kstr(&w, "text", e->text);
         jw_end_obj(&w);
     }
@@ -76,6 +77,7 @@ void history_load(const char *dir)
                 e->bytes = (uint64_t)json_num(json_get(o, "bytes"), 0);
                 ls_strlcpy(e->summary, json_str(json_get(o, "summary"), ""), sizeof e->summary);
                 ls_strlcpy(e->text, json_str(json_get(o, "text"), ""), sizeof e->text);
+                ls_strlcpy(e->path, json_str(json_get(o, "path"), ""), sizeof e->path);
                 s_n++;
             }
         }
@@ -94,6 +96,15 @@ void history_add(const hist_entry *e)
         s_n--;
     }
     s_list[s_n++] = *e;
+    save_locked();
+    plat_mutex_unlock(s_lock);
+}
+
+void history_clear(void)
+{
+    if (!s_lock) return;
+    plat_mutex_lock(s_lock);
+    s_n = 0;
     save_locked();
     plat_mutex_unlock(s_lock);
 }

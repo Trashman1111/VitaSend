@@ -402,8 +402,12 @@ void history_draw(const xfer_status *x)
         ui_scrollbar(CONTENT_R - 6, HIST_TOP, HIST_ROWS * HIST_STEP - 6, s_hcur.top, HIST_ROWS, n);
         ui_hit_scroll(CONTENT_X, HIST_TOP, CONTENT_W, HIST_ROWS * HIST_STEP, &s_hcur.top, &s_hcur.sel, n, HIST_ROWS, HIST_STEP);
     }
-    ui_hints(xfer_running(x) ? "DUD Move|X Read message|START Transfer|O Back"
-                             : "DUD Move|X Read message|O Back");
+    hist_entry cur;
+    bool is_msg = n > 0 && history_get(s_hcur.sel, &cur) && cur.is_text;
+    const char *act = is_msg ? "X Read message" : "X Show in Files";
+    char hints[96];
+    snprintf(hints, sizeof hints, xfer_running(x) ? "DUD Move|%s|START Transfer|O Back" : "DUD Move|%s|O Back", act);
+    ui_hints(hints);
 }
 
 void history_input(uint32_t p)
@@ -418,6 +422,9 @@ void history_input(uint32_t p)
             char title[96];
             snprintf(title, sizeof title, "Message %s %s", h.outgoing ? "to" : "from", h.peer);
             show_message(title, h.text, SC_HISTORY);
+        } else if (history_get(s_hcur.sel, &h)) {
+            if (h.path[0]) files_show_file(h.path);
+            else toast("No location was saved for this entry");
         }
     }
 }

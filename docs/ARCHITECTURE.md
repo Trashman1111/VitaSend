@@ -123,7 +123,7 @@ The rules that keep this simple:
 | File | Purpose |
 |---|---|
 | `settings.c` | `config.json`: alias, port, receive folder, Quick Save, install mode, exists-mode, PIN, favorites, theme, battery / clock / screensaver / sound |
-| `history.c` | `history.json`: the last 40 transfers and text messages |
+| `history.c` | `history.json`: the last 40 transfers and text messages (with the location of the first file; `history_clear`) |
 | `util.c` | logging (ring buffer + `log.txt`), threads, string / path / file helpers |
 
 ### User interface
@@ -141,6 +141,7 @@ The rules that keep this simple:
 | `app_update.c` | the update dialogs (checking, new version, download progress, failure) and the rules for the automatic check: 4 s after the IP appears, once a day (`updateAskedDay`), once per run, never over a transfer / request / dialog / screensaver |
 | `wifi.c` | "Wi-Fi is off": asks the platform to switch it on and follows the request (idle / connecting / failed after 20 s); used by `main.c` (start-up dialog) and the Receive page; when the switch-on is refused, `wifi_user_action()` opens the Vita's Wi-Fi settings (`plat_open_wifi_settings`) |
 | `app_saver.c` | the screensaver |
+| `app_helper.c` | the screen of the updater app (logo, name, *Update in progress*, a spinner); drawn by a thread of its own until the process ends |
 | `app_int.h` | what the `app_*.c` files share: screen ids, `app_state A`, the function list of each file |
 | `ui.c` / `ui.h` | widgets and layout (sidebar, cards, chips, hint bar, dialogs, progress bars) and the **tap-area registry** for touch |
 | `gfx.c`, `gfx_icons.c` / `gfx.h` | the 2D renderer: anti-aliased shapes, UTF-8 text, icons and PlayStation button symbols drawn from lines |

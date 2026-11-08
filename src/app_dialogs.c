@@ -300,6 +300,13 @@ void confirm_draw(const xfer_status *x)
         gfx_text(dx + 32, dy + 46, 22, GW_BOLD, C_TEXT, GA_LEFT, "Delete?");
         gfx_text_fit(dx + 32, dy + 88, 500, 16, GW_REG, C_TEXT, GA_LEFT, q);
         gfx_text_fit(dx + 32, dy + 114, 500, 13, GW_REG, C_DIM, GA_LEFT, "Folders go with everything inside. This cannot be undone.");
+    } else if (s_confirm == CF_CLEAR_HISTORY) {
+        char q[120];
+        int n = history_count();
+        snprintf(q, sizeof q, "Remove all %d entr%s from the History list?", n, n == 1 ? "y" : "ies");
+        gfx_text(dx + 32, dy + 46, 22, GW_BOLD, C_TEXT, GA_LEFT, "Clear history?");
+        gfx_text_fit(dx + 32, dy + 88, 500, 16, GW_REG, C_TEXT, GA_LEFT, q);
+        gfx_text_fit(dx + 32, dy + 114, 500, 13, GW_REG, C_DIM, GA_LEFT, "The files themselves stay. This cannot be undone.");
     } else {
         gfx_text(dx + 32, dy + 46, 22, GW_BOLD, C_TEXT, GA_LEFT, "Are you sure?");
         gfx_text_fit(dx + 32, dy + 92, 500, 16, GW_REG, C_TEXT, GA_LEFT,
@@ -318,6 +325,7 @@ void confirm_input(uint32_t p)
         if (s_confirm == CF_SETTING) { pick_apply(); go(SC_SETTINGS); }
         else if (s_confirm == CF_QUIT) { A.quit = true; }
         else if (s_confirm == CF_DELETE) { do_delete(); }
+        else if (s_confirm == CF_CLEAR_HISTORY) { history_clear(); history_reset(); toast("History cleared"); go(s_confirm_return); }
         else { xfer_request_cancel(); go(SC_TRANSFER); }
     } else if (p & UI_BTN_CIRCLE) {
         go(s_confirm_return);

@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v0.9.7 and this builds the VPK and publishes a GitHub release with it attached.
+# Push a tag like v0.9.8 and this builds the VPK and publishes a GitHub release with it attached.
 on:
   push:
     tags: ["v*"]

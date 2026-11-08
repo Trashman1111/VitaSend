@@ -191,6 +191,7 @@ static void history_finish(const send_job *job, hist_status st, uint64_t bytes, 
     } else if (job->n > 0) {
         if (job->n > 1) snprintf(h.summary, sizeof h.summary, "%.60s (+%d more)", job->items[0].name, job->n - 1);
         else ls_strlcpy(h.summary, job->items[0].name, sizeof h.summary);
+        ls_strlcpy(h.path, job->items[0].path, sizeof h.path);
     }
     history_add(&h);
 }

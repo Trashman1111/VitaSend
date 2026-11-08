@@ -13,7 +13,7 @@ over your own Wi-Fi, no cloud, no cable.** A native homebrew app written in C, w
 [![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 > VitaSend is an independent project. It speaks the open LocalSend protocol but is **not affiliated with** the LocalSend
-> project or Sony. Status: **beta (v0.9.7)** - see [Status](#status).
+> project or Sony. Status: **beta (v0.9.8)** - see [Status](#status).
 
 <table>
   <tr>
@@ -55,7 +55,7 @@ rendered on a PC by the same drawing code the Vita runs.
 You need a PS Vita with custom firmware (HENkaku / ensō - see the [Vita Hacks Guide](https://vita.hacks.guide/)) and
 [VitaShell](https://github.com/TheOfficialFloW/VitaShell).
 
-1. Download **`VitaSend-v097.vpk`** from the [Releases](../../releases) page.
+1. Download **`VitaSend-v098.vpk`** from the [Releases](../../releases) page.
 2. Copy it to your Vita (USB or FTP) and install it with VitaShell (open the file, press **X**).
 3. In the HENkaku settings turn on **"Enable unsafe homebrew"** - the installer needs the extended permissions
    (see [why](docs/BUILDING.md#why-the-app-is-unsafe)). Without it the app will not start.
@@ -100,7 +100,7 @@ export VITASDK=/usr/local/vitasdk && export PATH=$VITASDK/bin:$PATH
 mkdir build && cd build && cmake .. && make -j4
 ```
 
-The result is `build/VitaSend-v097.vpk`. Docker, WSL, CMake options and common problems: **[docs/BUILDING.md](docs/BUILDING.md)**.
+The result is `build/VitaSend-v098.vpk`. Docker, WSL, CMake options and common problems: **[docs/BUILDING.md](docs/BUILDING.md)**.
 
 You can also build the whole program as a normal Linux program and test it without a Vita:
 

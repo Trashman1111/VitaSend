@@ -23,6 +23,7 @@ typedef struct {
     int         nfiles;
     uint64_t    bytes;
     char        summary[96];          /* first file name, or the start of the message */
+    char        path[300];            /* where the first file is (received: where it was saved, sent: where it was read); "" = unknown */
     char        text[HIST_TEXT_MAX];  /* the message (is_text only) */
 } hist_entry;
 
@@ -30,5 +31,6 @@ void history_load(const char *dir);
 void history_add(const hist_entry *e);              /* thread safe; saves to disk */
 int  history_count(void);
 bool history_get(int index_newest_first, hist_entry *out);
+void history_clear(void);                           /* removes every entry (and saves the empty list) */
 
 #endif

@@ -24,11 +24,13 @@ typedef struct {
     char     version[16];
     char     content_id[48];
     bool     unsafe;             /* the app asks for extended permissions (the system may warn) */
+    bool     is_self;            /* the package is VitaSend itself (same title id as the running app) */
     uint64_t unpacked;           /* bytes after unpacking                                       */
     int      files;
 } vpk_info;
 
-/* The package of VitaSend itself is normally refused (it cannot replace the app that is running). The update dialog allows it. */
+/* The package of VitaSend itself is refused by vpk_inspect (the system installer cannot replace the app that is running) unless this is
+ * on; the screens that handle it with the updater app (see vpk_start_self_update) switch it on. */
 void vpk_allow_self(bool allow);
 bool vpk_has_extension(const char *name);           /* ends in ".vpk" (any case) */
 bool vpk_inspect(const char *path, vpk_info *info); /* reads only a few KiB; fills info->err when it returns false */

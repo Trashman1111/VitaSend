@@ -685,6 +685,35 @@ void files_delete_finished(int ok, int bad, const char *first_bad, bool cancelle
     else toast("Deleted %d item%s", ok, ok == 1 ? "" : "s");
 }
 
+void files_show_file(const char *full)
+{
+    files_ensure();
+    char dir[PATH_CAP];
+    ls_strlcpy(dir, full, sizeof dir);
+    const char *slash = strrchr(full, '/');
+    const char *name = slash ? slash + 1 : full;
+    bool moved_up = false;
+    for (;;) {                                           /* the folder of the file, or the nearest one that still exists */
+        path_parent(dir);
+        if (!dir[0]) break;
+        plat_dirent *l = NULL;
+        int n = plat_list_dir(dir, &l);
+        free(l);
+        if (n >= 0) break;
+        moved_up = true;
+    }
+    ls_strlcpy(s_fb.path, dir, sizeof s_fb.path);
+    if (!dir[0]) moved_up = true;
+    browser_load(&s_fb);
+    bool found = false;
+    for (int i = 0; i < s_fb.nent && !moved_up; i++)
+        if (!strcmp(s_fb.ent[i].name, name)) { s_fb.cur.sel = i; found = true; break; }
+    ui_cursor_clamp(&s_fb.cur, s_fb.nent, BROWSER_ROWS);
+    if (moved_up) toast("That folder is no longer there");
+    else if (!found) toast("The file is no longer there - this is its folder");
+    go(SC_FILES);
+}
+
 void files_focus_name(const char *name)
 {
     files_ensure();

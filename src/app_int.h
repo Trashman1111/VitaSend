@@ -50,7 +50,7 @@ typedef enum {
 
 typedef enum { OP_ALIAS, OP_PIN_SET, OP_SEND_PIN, OP_MESSAGE, OP_ADD_IP, OP_RENAME, OP_NEWDIR } osk_purpose;
 typedef enum { BM_SEND, BM_PICK_FOLDER } browser_mode;
-typedef enum { CF_QUIT, CF_CANCEL_XFER, CF_DELETE, CF_SETTING } confirm_what;
+typedef enum { CF_QUIT, CF_CANCEL_XFER, CF_DELETE, CF_SETTING, CF_CLEAR_HISTORY } confirm_what;
 
 #define RX_VPK_MAX_UI 8
 #define MAX_SEL  64
@@ -228,6 +228,7 @@ void unzip_ui_tick(void);
 void unzip_ui_draw(const xfer_status *x);
 void unzip_ui_input(uint32_t p);
 void files_delete_finished(int ok, int bad, const char *first_bad, bool cancelled);   /* app_fileops.c is done: report, reload */
+void files_show_file(const char *full);               /* Files tab: open the folder of this file and put the cursor on it (nearest existing folder if it is gone) */
 void files_focus_name(const char *name);                /* reload the listing and put the cursor on an entry */
 bool unique_path(char *path, size_t cap, bool is_dir);  /* "a.bin" -> "a (1).bin" if it exists already */
 

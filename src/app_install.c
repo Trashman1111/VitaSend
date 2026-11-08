@@ -23,11 +23,14 @@ void install_open(const char *path, screen_id ret)
     if (xfer_busy()) { toast("Wait until the transfer is finished"); return; }
     s_inst_return = ret;
     s_inst_auto = false;
-    s_inst_update = false;
-    vpk_allow_self(false);
     if (vpk_busy()) { s_inst_asking = false; go(SC_INSTALL); return; }
+    s_upd_launch_failed = false;
+    s_upd_ready_at = 0;
     ls_strlcpy(s_inst_path, path, sizeof s_inst_path);
+    vpk_allow_self(true);                                 /* a package of VitaSend itself is not refused: it is installed through the updater app */
     vpk_inspect(path, &s_inst_info);
+    s_inst_update = s_inst_info.is_self;
+    if (!s_inst_update) vpk_allow_self(false);
     s_inst_asking = true;
     go(SC_INSTALL);
 }
@@ -92,7 +95,7 @@ void install_draw(const xfer_status *x)
             fmt_size(in->unpacked, sz, sizeof sz);
             snprintf(line, sizeof line, "%s  \xC2\xB7  Version %s  \xC2\xB7  %s  \xC2\xB7  %d files", in->titleid, in->version[0] ? in->version : "?", sz, in->files);
             gfx_text_fit(lx, dy + 156, w, 15, GW_REG, C_DIM, GA_LEFT, line);
-            if (in->unsafe) {
+            if (in->unsafe && !s_inst_update) {
                 gfx_rrect(lx, dy + 186, w, 62, 12, GRGBA(255, 193, 77, 36));
                 gfx_text_fit(lx + 16, dy + 206, w - 32, 15, GW_MED, C_WARN, GA_LEFT, "This app asks for extended permissions.");
                 gfx_text_fit(lx + 16, dy + 230, w - 32, 14, GW_REG, C_TEXT, GA_LEFT, "Only install apps from sources you trust.");
@@ -123,7 +126,15 @@ void install_draw(const xfer_status *x)
 
     if (ended) {
         gfx_text_fit(lx, dy + 128, w, 17, GW_MED, mc, GA_LEFT, vs.message);
-        if (s_inst_update && vs.state == VPK_DONE) gfx_text_fit(lx, dy + 232, w, 15, GW_REG, C_TEXT, GA_LEFT, s_upd_launch_failed ? "The updater could not be started. Close VitaSend and start it again." : "Please wait - the screen goes dark for a moment.");
+        if (s_inst_update && vs.state == VPK_DONE) {
+            if (s_upd_launch_failed) {
+                gfx_text_fit(lx, dy + 232, w, 15, GW_REG, C_TEXT, GA_LEFT, "The updater could not be started. Close VitaSend and start it again.");
+            } else {
+                gfx_rrect(lx, dy + 226, w, 70, 12, GRGBA(255, 193, 77, 36));
+                gfx_text_fit(lx + 16, dy + 250, w - 32, 17, GW_BOLD, C_WARN, GA_LEFT, "Please do not close this window.");
+                gfx_text_fit(lx + 16, dy + 276, w - 32, 14, GW_REG, C_TEXT, GA_LEFT, "The screen goes dark for a moment, then VitaSend starts again by itself.");
+            }
+        }
     } else {
         gfx_text_fit(lx, dy + 128, w, 17, GW_MED, C_TEXT, GA_LEFT, vs.stage);
     }
@@ -132,7 +143,9 @@ void install_draw(const xfer_status *x)
     snprintf(pcs, sizeof pcs, "%d %%", vs.pct);
     gfx_text(lx + w, dy + 190, 17, GW_MED, C_TEXT, GA_RIGHT, pcs);
 
-    if (ended) {
+    if (ended && s_inst_update && vs.state == VPK_DONE && !s_upd_launch_failed) {
+        ui_hints("");                    /* the updater app is about to start: no buttons to close anything by accident */
+    } else if (ended) {
         int w1 = ui_action_width(PB_CROSS, "Close");
         ui_action(lx, dy + 330, PB_CROSS, "Close");
         if (s_inst_update && vs.state == VPK_DONE) {
@@ -150,7 +163,7 @@ void install_draw(const xfer_status *x)
         ui_action(lx, dy + 330, PB_CIRCLE, "Cancel");
         ui_hints("O Cancel");
     } else {
-        gfx_text(lx, dy + 346, 15, GW_REG, C_DIM, GA_LEFT, "Almost done - please keep the Vita on.");
+        gfx_text(lx, dy + 346, 15, GW_REG, C_DIM, GA_LEFT, s_inst_update ? "Almost done - please keep the Vita on and do not close this window." : "Almost done - please keep the Vita on.");
         ui_hints("");
     }
 }
@@ -173,6 +186,7 @@ void install_input(uint32_t p)
         if ((p & UI_BTN_CIRCLE) && vs.pct < 92) vpk_cancel();
         return;
     }
+    if (s_inst_update && vs.state == VPK_DONE && !s_upd_launch_failed) return;       /* the updater app starts by itself: nothing to press */
     if ((p & UI_BTN_SQUARE) && s_inst_update && vs.state == VPK_DONE && s_upd_launch_failed) { A.quit = true; return; }
     if ((p & UI_BTN_SQUARE) && vs.state == VPK_DONE && vs.titleid[0] && plat_can_launch()) {
         if (!plat_launch_app(vs.titleid)) toast("Cannot open the app from here - use its LiveArea bubble");
@@ -267,6 +281,7 @@ void iq_open(const char *const *paths, int n, screen_id ret, bool autostart)
     if (xfer_busy()) { toast("Wait until the transfer is finished"); return; }
     if (vpk_busy()) { s_inst_asking = false; s_iq_phase = IQ_NONE; s_inst_return = ret; go(SC_INSTALL); return; }
     iq_reset();
+    vpk_allow_self(false);                              /* packages that arrive in a queue never replace VitaSend by themselves: open the file in the Files tab */
     for (int i = 0; i < n; i++) {
         vpk_info in;
         memset(&in, 0, sizeof in);
@@ -372,7 +387,7 @@ static void iq_draw(const xfer_status *x)
             ui_action(lx, dy + 330, PB_CIRCLE, "Cancel (stops the rest)");
             ui_hints("O Cancel (stops the rest)");
         } else {
-            gfx_text(lx, dy + 346, 15, GW_REG, C_DIM, GA_LEFT, "Almost done - please keep the Vita on.");
+            gfx_text(lx, dy + 346, 15, GW_REG, C_DIM, GA_LEFT, s_inst_update ? "Almost done - please keep the Vita on and do not close this window." : "Almost done - please keep the Vita on.");
             ui_hints("");
         }
         return;
