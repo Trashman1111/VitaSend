@@ -13,7 +13,7 @@ over your own Wi-Fi, no cloud, no cable.** A native homebrew app written in C, w
 [![License: GPL v3+](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 > VitaSend is an independent project. It speaks the open LocalSend protocol but is **not affiliated with** the LocalSend
-> project or Sony. Status: **beta (v0.9.8)** - see [Status](#status).
+> project or Sony. Status: **v1.0.0** - see [Status](#status).
 
 <table>
   <tr>
@@ -76,21 +76,26 @@ Everything else - controls, settings, the installer, troubleshooting - is in the
 
 ## Status
 
-VitaSend is a **beta**. What has been checked:
+VitaSend 1.0 is the first stable release. What has been checked:
 
-* This is being used on a real PS Vita **PCH-1004** with the **LocalSend Windows, Linux, Android and iPhone apps**:
+* This is being used on a real PS Vita **PCH-1004** with the **LocalSend Windows, Linux, Android, iPhone and macOS apps**:
   receiving and sending files, text, installing packages, touch, screensaver, sound.
-* More than **600 automated checks** run on a PC against the real mbedTLS under AddressSanitizer / UBSan: the protocol
+* More than **800 automated checks** run on a PC against the real mbedTLS under AddressSanitizer / UBSan: the protocol
   (against stand-ins that play the other LocalSend device), the transfer engines, the `.vpk` installer (ZIP / DEFLATE
   compared with Python's `zlib`, corrupted and malicious packages), and the whole interface including simulated touch.
   See [docs/TESTING.md](docs/TESTING.md).
-* **Not yet tested:** the LocalSend app for macOS, other Vita models (PCH-100x vs PCH-200x, PS TV) and firmware versions,
+* **Not yet tested:** other Vita models (PCH-100x vs PCH-200x, PS TV) and firmware versions,
   ensō-only setups. Reports are very welcome - use the *Bug report* template and attach the log
   (*Settings > Log*).
 
 Known limits: one transfer at a time, one TLS connection per file (many tiny files are slow), the browser-download API and
 IPv6 are not supported, only Latin / Greek / Cyrillic text can be displayed. Details in the
 [user guide](docs/USER_GUIDE.md#limits-you-will-notice) and [PROTOCOL.md](docs/PROTOCOL.md).
+
+## Easter egg
+
+VitaSend hides a small secret. A hint: the logo in the top-left corner likes attention - keep poking it, and do not give up
+after a few taps. Once it answers, the rest is a matter of using both shoulders. (When it has been found it stays found.)
 
 ## Build from source
 

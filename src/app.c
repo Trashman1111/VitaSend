@@ -32,7 +32,10 @@ void under_tab(void *ctx)
 
 void go(screen_id sc)
 {
-
+    /* the Pong easter egg: a transfer or an installation must not pull the player out of the game (its progress is shown there);
+     * the screen is shown once the game is left. Any other screen pauses the game. */
+    if (A.sc == SC_PONG && (sc == SC_TRANSFER || sc == SC_INSTALL)) { A.pong_defer = (int)sc; return; }
+    if (A.sc == SC_PONG && sc != SC_PONG) pong_screen_left();
     /* an event that needs the user (a request, a message, a PIN...) ends the screensaver; a transfer that simply starts, or an
      * installation that starts by itself, does not - the screensaver shows its progress */
     if (A.saver && sc != A.sc && sc != SC_TRANSFER && sc != SC_INSTALL) saver_stop("screen change");
@@ -65,7 +68,7 @@ void chime_if_on(void)
     if (cs.sound) plat_chime();
 }
 
-void draw_chrome(int tab, const xfer_status *x)
+static void make_side_info(ui_side_info *out, const xfer_status *x)
 {
     ls_settings hs;
     settings_snapshot(&hs);
@@ -74,12 +77,30 @@ void draw_chrome(int tab, const xfer_status *x)
     if (hs.show_clock && !plat_local_clock(&ch, &cm)) ch = -1;
     ui_side_info si = { .ip = (hs.hide_ids && A.ip[0]) ? "Address hidden" : A.ip, .battery = hs.show_battery ? s_bat : -1, .charging = s_bat_chg,
                         .clock_h = ch, .clock_m = cm };
-    if (xfer_running(x)) {
+    if (x && xfer_running(x)) {
         si.xfer_title = x->outgoing ? "Sending" : "Receiving";
         si.xfer_peer = x->peer;
         si.xfer_pct = xfer_percent(x);
     }
+    *out = si;
+}
+
+void draw_chrome(int tab, const xfer_status *x)
+{
+    ui_side_info si;
+    make_side_info(&si, x);
     ui_draw_chrome(tab, &si);
+}
+
+/* The logo, battery and clock only (the screens without a sidebar). */
+void draw_topbar(void)
+{
+    ui_side_info si;
+    make_side_info(&si, NULL);
+    gfx_norec(true);
+    ui_draw_logo();
+    gfx_norec(false);
+    ui_draw_status(&si);
 }
 
 /* ============================================================== drawing / input dispatch */
@@ -97,7 +118,7 @@ void draw_tab(int tab, const xfer_status *x)
 
 static void draw_screen(const xfer_status *x)
 {
-    static const char *const names[] = { "receive", "send", "history", "files", "settings", "browser", "keyboard", "log", "message", "request", "transfer", "confirm", "install", "menu", "pick", "info", "move", "view", "update", "delete", "unzip" };
+    static const char *const names[] = { "receive", "send", "history", "files", "settings", "browser", "keyboard", "log", "message", "request", "transfer", "confirm", "install", "menu", "pick", "info", "move", "view", "update", "delete", "unzip", "pong" };
     gfx_begin();
     ui_hit_reset();
     ui_set_side_focus(A.side_focus && A.sc <= SC_SETTINGS && !A.saver);
@@ -126,6 +147,7 @@ static void draw_screen(const xfer_status *x)
     case SC_UPDATE:   upd_ui_draw(x); break;
     case SC_DELETE:   delete_draw(x); break;
     case SC_UNZIP:    unzip_ui_draw(x); break;
+    case SC_PONG:     pong_screen_draw(x); break;
     }
     if (s_toast[0] && plat_time_ms() < s_toast_until) ui_toast(s_toast);
     gfx_end();
@@ -181,6 +203,7 @@ static void handle_tab_keys(uint32_t p)
 static void handle_input(uint32_t p)
 {
     if (!p) return;
+    if (pong_open_keys(p)) return;                       /* the easter egg: L and R together */
     switch (A.sc) {
     case SC_HOME: case SC_SEND: case SC_HISTORY: case SC_FILES: case SC_SETTINGS: handle_tab_keys(p); break;
     case SC_BROWSER:  browser_input(p); break;
@@ -199,6 +222,7 @@ static void handle_input(uint32_t p)
     case SC_UPDATE:   upd_ui_input(p); break;
     case SC_DELETE:   delete_input(p); break;
     case SC_UNZIP:    unzip_ui_input(p); break;
+    case SC_PONG:     pong_screen_input(p); break;
     }
 }
 
@@ -228,6 +252,7 @@ static uint32_t read_input(void)
         if (s_in_since[i] && now >= s_in_next[i]) { pressed |= rep[i]; s_in_next[i] = now + 70; }
     }
     s_in_prev = b;
+    A.held = b;
     return pressed;
 }
 
@@ -237,6 +262,8 @@ static uint32_t read_touch(bool *changed)
     int tx = 0, ty = 0;
     bool down = ui_touch(&tx, &ty);
     A.touch_down = down;
+    A.touch_x = tx;
+    A.touch_y = ty;
     if (A.swallow_touch) {                               /* the finger that woke the screensaver: nothing it does counts */
         if (!down) A.swallow_touch = false;
         touch_reset();
@@ -407,6 +434,7 @@ void app_run(const app_opts *opts)
     }
     plat_net_local_ip(A.ip);
     ui_set_tab_handler(on_tab_tap);
+    pong_glue_init();
 
     xfer_status x0;
     xfer_snapshot(&x0);
@@ -438,12 +466,13 @@ void app_run(const app_opts *opts)
         check_events();
         upd_ui_tick(now);
         install_tick(now);
+        if (A.sc == SC_PONG) pong_screen_tick(now);
 
         /* idle for long enough: start the screensaver (not while a question waits for the user, or while typing) */
         {
             ls_settings ss;
             settings_snapshot(&ss);
-            if (!A.saver && ss.screensaver > 0 && A.sc != SC_REQUEST && A.sc != SC_OSK && A.sc != SC_VIEW && A.sc != SC_UPDATE && !move_busy() && !delete_busy() && !unzip_ui_busy() &&
+            if (!A.saver && ss.screensaver > 0 && A.sc != SC_REQUEST && A.sc != SC_OSK && A.sc != SC_VIEW && A.sc != SC_UPDATE && A.sc != SC_PONG && !move_busy() && !delete_busy() && !unzip_ui_busy() &&
                 now > A.last_input && now - A.last_input > (uint64_t)ss.screensaver * idle_unit_ms()) {   /* (the wake-up stamps last_input AFTER `now` was read: never subtract a newer time) */
                 saver_start();
                 dirty = true;
@@ -485,6 +514,7 @@ void app_run(const app_opts *opts)
         if (A.sc != last_sc) { last_sc = A.sc; dirty = true; }
         if (A.saver != last_saver) { last_saver = A.saver; dirty = true; }
         if (A.saver) fast = true;
+        if (A.sc == SC_PONG) { fast = true; dirty = true; }                 /* a game: every pass of the loop is a new picture */
         if (dirty || now - t_draw > (A.saver ? 33u : (fast ? 120u : 500u))) {
             xfer_status x;
             xfer_snapshot(&x);

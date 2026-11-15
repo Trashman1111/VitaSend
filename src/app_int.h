@@ -45,7 +45,7 @@
 typedef enum {
     SC_HOME = TAB_RECEIVE, SC_SEND = TAB_SEND, SC_HISTORY = TAB_HISTORY, SC_FILES = TAB_FILES, SC_SETTINGS = TAB_SETTINGS,   /* the tabs */
     SC_BROWSER, SC_OSK, SC_LOG,
-    SC_MESSAGE, SC_REQUEST, SC_TRANSFER, SC_CONFIRM, SC_INSTALL, SC_MENU, SC_PICK, SC_INFO, SC_MOVE, SC_VIEW, SC_UPDATE, SC_DELETE, SC_UNZIP     /* dialogs on top of a page (SC_VIEW: the picture / text viewer, full screen) */
+    SC_MESSAGE, SC_REQUEST, SC_TRANSFER, SC_CONFIRM, SC_INSTALL, SC_MENU, SC_PICK, SC_INFO, SC_MOVE, SC_VIEW, SC_UPDATE, SC_DELETE, SC_UNZIP, SC_PONG     /* dialogs on top of a page (SC_VIEW: the picture / text viewer, full screen) */
 } screen_id;
 
 typedef enum { OP_ALIAS, OP_PIN_SET, OP_SEND_PIN, OP_MESSAGE, OP_ADD_IP, OP_RENAME, OP_NEWDIR } osk_purpose;
@@ -73,6 +73,9 @@ typedef struct {
     bool         side_focus;         /* the D-pad focus is on the tab list (LEFT goes there, RIGHT / X / O comes back) */
     bool         swallow_touch;      /* the finger that woke the screensaver is still down: its tap / drag does nothing */
     bool         touch_down;         /* a finger is on the screen right now                                  */
+    int          touch_x, touch_y;   /* where it is (screen pixels; only meaningful while touch_down)         */
+    uint32_t     held;               /* the buttons held down right now (UI_BTN_*)                           */
+    int          pong_defer;         /* easter egg: a transfer / installation screen waits until the game is left (0 = none) */
     float        sx, sy, vx, vy;     /* screensaver: position of the moving box (top left) and speed in px/s */
 } app_state;
 
@@ -115,6 +118,7 @@ void go(screen_id sc);                                  /* switch to a screen (a
 void toast(const char *fmt, ...) LS_PRINTF(1, 2);       /* a short message at the bottom */
 void under_tab(void *ctx);                              /* what a dialog dims behind it: the current tab */
 void draw_tab(int tab, const xfer_status *x);
+void draw_topbar(void);                                 /* only the logo, battery and clock (screens without a sidebar) */
 void draw_chrome(int tab, const xfer_status *x);        /* background, tab list, battery / clock, transfer card */
 void chime_if_on(void);                                 /* the "finished" chime, unless the user switched it off */
 
@@ -238,5 +242,14 @@ void saver_start(void);
 void saver_stop(const char *why);
 void saver_step(void);
 void saver_draw(const xfer_status *x);
+
+/* ---- app_pong.c: the Pong easter egg (the game itself is pong.c) ---- */
+void pong_glue_init(void);                              /* loads pong.json; call once at start */
+void pong_logo_tap(void);                               /* a tap on the logo: the 11th one in a row unlocks the game */
+bool pong_open_keys(uint32_t pressed);                  /* L + R together: opens / closes the game; true = the keys were used */
+void pong_screen_draw(const xfer_status *x);
+void pong_screen_input(uint32_t p);
+void pong_screen_tick(uint64_t now);                    /* every pass of the main loop while the game is open */
+void pong_screen_left(void);                            /* the game screen is being left for a dialog (it pauses) */
 
 #endif

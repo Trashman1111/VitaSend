@@ -244,6 +244,32 @@ static void wifi_tap_thunk(void *ctx, int arg)
     wifi_user_action();
 }
 
+static void (*s_logo_cb)(void);
+void ui_set_logo_handler(void (*fn)(void)) { s_logo_cb = fn; }
+static void logo_thunk(void *ctx, int arg)
+{
+    (void)ctx;
+    (void)arg;
+    if (s_logo_cb) s_logo_cb();
+}
+
+/* The logo and the name at the top left (a tap on them goes to the logo handler). */
+void ui_draw_logo(void)
+{
+    gfx_rrect(20, 22, 40, 40, 12, C_ACCENT);
+    gfx_icon(IC_LOGO, 40, 42, 34, GRGB(255, 255, 255));
+    gfx_text(70, 42, 21, GW_BOLD, C_TEXT, GA_LEFT, "VitaSend");
+    ui_hit_call(12, 14, 160, 56, logo_thunk, NULL, 0);
+}
+
+/* The battery and the clock at the top right (each only when switched on: info->battery / clock_h >= 0). */
+void ui_draw_status(const ui_side_info *info)
+{
+    int rx = CONTENT_R;
+    if (info && info->battery >= 0) rx -= ui_battery(rx, 22, info->battery, info->charging) + 18;
+    if (info && info->clock_h >= 0) ui_clock(rx, 22, info->clock_h, info->clock_m);
+}
+
 void ui_draw_chrome(int tab, const ui_side_info *info)
 {
     static const char *const names[TAB_COUNT] = { "Receive", "Send", "History", "Files", "Settings" };
@@ -258,9 +284,7 @@ void ui_draw_chrome(int tab, const ui_side_info *info)
     }
 
     gfx_norec(true);                                           /* the sidebar is not part of the text dump */
-    gfx_rrect(20, 22, 40, 40, 12, C_ACCENT);
-    gfx_icon(IC_LOGO, 40, 42, 34, GRGB(255, 255, 255));
-    gfx_text(70, 42, 21, GW_BOLD, C_TEXT, GA_LEFT, "VitaSend");
+    ui_draw_logo();
 
     for (int i = 0; i < TAB_COUNT; i++) {
         int y = 90 + i * 50;
@@ -298,9 +322,7 @@ void ui_draw_chrome(int tab, const ui_side_info *info)
         ui_hit_keys(12, y, SIDEBAR_W - 24, 82, UI_BTN_START);            /* tap the progress card: show the transfer */
     }
     gfx_norec(false);
-    int rx = CONTENT_R;
-    if (info && info->battery >= 0) rx -= ui_battery(rx, 22, info->battery, info->charging) + 18;
-    if (info && info->clock_h >= 0) ui_clock(rx, 22, info->clock_h, info->clock_m);
+    ui_draw_status(info);
 }
 
 int ui_battery(int right_x, int cy, int pct, bool charging)

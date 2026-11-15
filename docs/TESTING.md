@@ -68,6 +68,8 @@ Environment variables (test knobs, only in the PC build):
 | `LS_IDLE_UNIT_MS=100` | shrinks "seconds" of the screensaver timer (30 s -> 3 s) |
 | `LS_SLOW_PROMOTE_MS`, `LS_FAKE_PROMOTE_FAIL` | the stand-in installer takes long / fails |
 | `LS_FAIL_RENAME=1`, `LS_SLOW_MOVE_MS=60` | renaming always fails (so *Move* copies, like between two cards) / each copied 64 KB block takes this long |
+| `LS_PONG_TIMESCALE`, `LS_PONG_LIVES`, `LS_PONG_CPU_SPEED` | host build, easter egg: game speed factor / points the computer needs to win / its paddle speed (0 = it stands still, so the player scores) |
+| `LS_PONG_SIM=<games>[,<seed>[,<noise>]]` | host build, easter egg: plays whole games with a bot (D-pad only; `noise` = how far in px its paddle may end up beside the ball, 0 = flawless, negative = nobody plays), prints `PONG_SIM ...` and exits. `--only pong` uses it to check that somebody who does not play loses |
 | `--helper-screen` (program option) | host build: shows only the updater app's screen, for pictures and tests |
 | `LS_APP_DIR=dir` | host build: the folder of the "installed" app (eboot.bin, sce_sys/param.sfo) the self-update copies to make the updater app |
 | `LS_UPDATE_API=localhost:PORT`, `LS_UPDATE_CA=ca.pem`, `LS_UPDATE_DELAY_MS`, `LS_FAKE_DATE=YYYY-MM-DD` | the update check asks this server instead of api.github.com / trusts only this CA instead of the built-in roots / waits this long after the IP appears (default 4000) / the date for the once-a-day rule |

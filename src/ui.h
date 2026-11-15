@@ -129,6 +129,9 @@ void ui_hit_row(int x, int y, int w, int h, ui_cursor *c, int index, uint32_t ke
 void ui_hit_scroll(int x, int y, int w, int h, int *top, int *sel, int count, int rows, int rowh);
 /* Sidebar taps call this with the tab number (TAB_*). */
 void ui_set_tab_handler(void (*fn)(int tab));
+void ui_set_logo_handler(void (*fn)(void));            /* called when the logo at the top left is tapped */
+void ui_draw_logo(void);                               /* the logo and the name, top left (the same in every screen that shows them) */
+void ui_draw_status(const ui_side_info *info);         /* battery and clock, top right */
 
 /* Feeding finger events in (see touch.h). A tap returns the buttons to press (0 = none). */
 void     ui_input_refresh(void);                  /* re-arms controller + touch sampling (the system installer may reset them) */

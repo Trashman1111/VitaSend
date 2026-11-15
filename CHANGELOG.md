@@ -1,9 +1,22 @@
 # Changelog
 
 All notable changes to VitaSend. The format follows [Keep a Changelog](https://keepachangelog.com/); versions follow
-[Semantic Versioning](https://semver.org/) once 1.0 is reached (until then minor versions may change behaviour).
+[Semantic Versioning](https://semver.org/) (before 1.0.0 minor versions could change behaviour).
 
 How the project got here, step by step, is in [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md).
+
+## [1.0.0] - 2026-11-12
+
+The first stable release. Nothing in the transfer, installer or update code changed since 0.9.8; this version adds a small surprise and
+records what has been tested.
+
+### Added
+- **An easter egg.** Something hidden; how to find it stays a secret (the README has a hint). Its code is separate from the rest of the program (`pong.c`, `app_pong.c`),
+  and it has a strong computer opponent that gets quicker with every point you make.
+
+### Tested
+- Works with the LocalSend apps for **Android, Windows, Linux, iPhone and macOS** (reported by the author's own tests).
+- 825 automated checks on a PC (`python3 host/test_transfer.py`).
 
 ## [0.9.8] - 2026-11-08
 

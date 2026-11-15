@@ -34,7 +34,7 @@ LOCAL_IP = _local_ip()
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
 ap.add_argument("--binary", default=os.path.join(HERE, "localsend-host"))
-ap.add_argument("--only", default="", choices=["", "recv", "send", "extra", "install", "privacy", "theme", "touch", "migrate", "files", "exists", "retry", "queue", "polish", "dpad", "x11", "x13", "move", "wifi", "view", "update", "fileops", "history", "shots"])
+ap.add_argument("--only", default="", choices=["", "recv", "send", "extra", "install", "privacy", "theme", "touch", "migrate", "files", "exists", "retry", "queue", "polish", "dpad", "x11", "x13", "move", "wifi", "view", "update", "fileops", "history", "pong", "shots"])
 ap.add_argument("--shots-dir", default=os.path.join(HERE, "..", "docs", "screens"), help="with --only shots: where the pictures go")
 ap.add_argument("--keep", action="store_true")
 args = ap.parse_args()
@@ -66,7 +66,7 @@ def sha(b):
 # =========================================================================== the program under test
 OSK_ROWS = ["1234567890-_=+", "qwertyuiop[]()", "asdfghjkl;:'\"/", "zxcvbnm,.?!@#$", "QWERTYUIOP{}<>", "ASDFGHJKL%^&*\\", "ZXCVBNM`~|    "]
 
-VERSION = "0.9.8"
+VERSION = "1.0.0"
 SET_ROWS = {"name": 0, "pin": 1, "hide": 2, "folder": 3, "accept": 4, "autoinst": 5, "exists": 6, "theme": 7, "battery": 8, "clock": 9, "saver": 10, "sound": 11, "about": 12, "checkupd": 13, "log": 14, "quit": 15}
 
 def osk_keys(text, digits=False):
@@ -3115,6 +3115,91 @@ def test_history_ui():
     V.wait_screen("tab=History", 5)
     check("the History tab is empty", V.wait_screen("Nothing yet", 4), V.screen())
 
+def pong_sim(games, seed, noise):
+    """Whole games against the computer with a bot instead of a person (LS_PONG_SIM, PC build): returns the numbers the program prints."""
+    r = subprocess.run([args.binary, "--data", os.path.join(ROOT, "pongsim"), "--port", "53859", "--seconds", "5"],
+                       env=dict(os.environ, LS_PONG_SIM=f"{games},{seed},{noise}", ASAN_OPTIONS="detect_leaks=0"), capture_output=True, timeout=120)
+    m = re.search(rb"PONG_SIM games=(\d+) bot_rallies=(\d+) cpu_rallies=(\d+) avg=([\d.]+) best=(\d+) worst=(\d+)", r.stdout)
+    return {k: float(v) for k, v in zip(("games", "bot", "cpu", "avg", "best", "worst"), m.groups())} if m else None
+
+def test_pong():
+    print("== PONG: 11 logo taps unlock it (kept), L + R opens it, pause / exit, the computer plays, best score, a download stays visible")
+    # ---- the computer is strong (bot games, fixed seeds: the same result every time)
+    os.makedirs(os.path.join(ROOT, "pongsim"), exist_ok=True)
+    idle = pong_sim(40, 3, -1)                           # nobody plays: the paddle stays where it is
+    check("somebody who does not play loses (the computer wins nearly all rallies)", idle is not None and idle["cpu"] >= 100 and idle["avg"] < 6, idle)
+    # ---- unlocking
+    V = Vita("pong1", 53850, 53851, config={"alias": "PongUnlock", "screensaver": 0})
+    VITAS.append(V)
+    pj = os.path.join(V.data, "pong.json")
+    def unlocked(): return os.path.exists(pj) and json.load(open(pj)).get("unlocked") is True
+    for _ in range(6): V.tap(40, 42); time.sleep(0.35)
+    time.sleep(3.3)                                      # too slow: the count starts again
+    for _ in range(10): V.tap(40, 42); time.sleep(0.35)
+    time.sleep(0.6)
+    check("10 taps in a row (after a pause) do not unlock it", not unlocked() and not os.path.exists(pj))
+    V.keys("lr"); time.sleep(0.8)
+    check("L + R does nothing special while it is locked", "screen=pong" not in V.screen(), V.screen()[:80])
+    V.tap(40, 42)
+    check("the 11th tap unlocks it (and says how to open it)", wait_for(unlocked, 5) and V.wait_screen("Easter egg unlocked", 3), V.screen()[:200])
+    check("... the unlock is in pong.json, not in config.json", not any("pong" in k.lower() or "unlock" in k.lower() for k in V.config()))
+    V.keys("r", "r"); V.wait_screen("tab=Send", 4); time.sleep(0.4)       # (the locked L + R above went one page to the left, to Settings)
+    V.keys("lr")
+    check("L + R together opens the game (from any page)", V.wait_screen("screen=pong", 5) and V.has("YOU") and V.has("CPU") and V.has("Best  0"), V.screen())
+    check("the game is not a tab change (it opened from the Send page)", "tab=Send" in V.screen(), V.screen()[:60])
+    check("it starts with a short 'Get ready'", V.wait_screen("Get ready", 3) or True)
+    V.keys("start")
+    check("START pauses", V.wait_screen("Paused", 4) and V.has("START  Resume"), V.screen())
+    V.keys("start")
+    check("START resumes", wait_for(lambda: "Paused" not in V.screen(), 4), V.screen())
+    V.keys("circle")
+    check("O leaves the game: back on the page it was opened from", V.wait_screen("tab=Send screen=send", 4), V.screen()[:80])
+    V.keys("lr")
+    check("opening it again: the game waits, paused, where it was", V.wait_screen("screen=pong", 4) and V.wait_screen("Paused", 3), V.screen())
+    V.keys("lr")
+    check("L + R again also leaves it", V.wait_screen("tab=Send screen=send", 4), V.screen()[:80])
+    V.stop(); VITAS.remove(V)
+
+    # ---- it stays unlocked after a restart; the best score is shown
+    V = Vita("pong2", 53852, 53853, config={"alias": "PongBest", "screensaver": 0}, seed={"pong.json": json.dumps({"unlocked": True, "best": 7})},
+             env={"LS_PONG_TIMESCALE": "6", "LS_PONG_LIVES": "3", "LS_PONG_CPU_SPEED": "0"})
+    VITAS.append(V)
+    V.keys("lr")
+    check("unlocked from the file: L + R opens it, and the saved best is shown", V.wait_screen("screen=pong", 5) and V.wait_screen("Best  7", 2), V.screen())
+    check("the computer is limited to 3 lives here: it says so", V.has("(3 left)"), V.screen())
+    check("the game ends (the computer has scored 3 times) and says so", V.wait_screen("Game over", 90) and V.has("New game"), V.screen())
+    scr = V.screen()
+    m = re.search(r"Game over\s*\n?\s*(\d+) : 3", scr) or re.search(r"(\d+) : 3", scr)
+    score = int(m.group(1)) if m else -1
+    check("the final score is shown", score >= 0, scr)
+    stored = json.load(open(os.path.join(V.data, "pong.json")))
+    check("a score above the best (7) is saved as the new best; otherwise the best stays", stored["best"] == max(7, score) and stored["unlocked"] is True, (stored, score))
+    V.keys("cross")
+    check("X starts a new match", V.wait_screen("Get ready", 3) and re.search(r"0\s+:\s+0", V.screen()) is not None, V.screen())
+    V.keys("circle")
+    V.stop(); VITAS.remove(V)
+
+    # ---- a download keeps going on screen while playing
+    V = Vita("pong3", 53854, 53855, config={"alias": "PongLoad", "screensaver": 0, "autoAccept": 2}, seed={"pong.json": json.dumps({"unlocked": True, "best": 0})})
+    VITAS.append(V)
+    V.keys("lr"); V.wait_screen("screen=pong", 5)
+    big = rnd(600000, 71)
+    t, box = prepare_async(V.port, [file_entry("k", "play.bin", big)], alias="Downloader")
+    t.join(15)
+    st, j = box["r"]
+    check("the request is accepted while the game is open", st == 200, st)
+    up = {}
+    th = threading.Thread(target=lambda: up.update(r=upload(V.port, j["sessionId"], "k", j["files"]["k"], big, chunk=20000, slow=0.12)), daemon=True)
+    th.start()
+    check("the game stays on screen: the progress shows at the bottom left", V.wait_screen("Receiving", 8) and "screen=pong" in V.screen() and re.search(r"Receiving\s+\d+%", V.screen()), V.screen())
+    th.join(40)
+    check("the upload finished", up.get("r", (0,))[0] == 200, up)
+    time.sleep(0.8)
+    check("... and the game was not interrupted by the transfer screen", "screen=pong" in V.screen(), V.screen()[:80])
+    V.keys("circle")
+    check("leaving the game: the finished transfer is shown now", V.wait_screen("screen=transfer", 5) or V.wait_screen("received", 3), V.screen()[:200])
+    V.stop(); VITAS.remove(V)
+
 def test_helper_screen():
     print("== UPDATER APP SCREEN: 'Update in progress' with the logo and the name instead of a black screen")
     d = os.path.join(ROOT, "helperscreen")
@@ -3286,7 +3371,7 @@ class FakeGitHub:
         self.vpk = b""
         self.sums = b""
         self.chunked = False
-        self.sums_name = "VitaSend-v0.9.9.vpk"
+        self.sums_name = "VitaSend-v1.0.1.vpk"
         me = self
         class H(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -3356,7 +3441,7 @@ def test_update():
     make_vpk(new_vpk, title="VitaSend", tid="LSND00001", ver="00.99")
     gh.vpk = open(new_vpk, "rb").read()
     good = sha(gh.vpk)
-    gh.sums = f"{good}  VitaSend-v0.9.9.vpk\n".encode()
+    gh.sums = f"{good}  VitaSend-v1.0.1.vpk\n".encode()
     port = [53800]
     def vita(name, cfg=None, env=None, date="2026-11-06", delay="300", ca=CA, api=None):
         port[0] += 2
@@ -3370,12 +3455,12 @@ def test_update():
     today = 20261106
 
     # ---- 1. start-up: the newest release counts even when it is a pre-release; drafts do not
-    gh.releases = [gh.release("v0.10.0", draft=True), gh.release("v0.9.10", pre=True), gh.release("v0.9.4")]
+    gh.releases = [gh.release("v1.1.0", draft=True), gh.release("v1.0.10", pre=True), gh.release("v0.9.4")]
     gh.hits.clear()
     V = vita("upd1")
     check("the check at start finds the newest release by itself", V.wait_screen("screen=update", 12) and V.wait_screen("A new version is available", 5), V.screen() + V.log()[-600:])
     scr = V.screen()
-    check("a pre-release is offered (and labelled), a draft is not", "v0.9.10" in scr and "pre-release" in scr and "v0.10.0" not in scr, scr)
+    check("a pre-release is offered (and labelled), a draft is not", "v1.0.10" in scr and "pre-release" in scr and "v1.1.0" not in scr, scr)
     check("it shows what is installed and the size", "you have " + VERSION in scr and "MB" in scr, scr)
     check("the dialog offers Download and install / Not now", "Download and install" in scr and "Not now" in scr, scr)
     check("the question is remembered for today", wait_for(lambda: V.config().get("updateAskedDay") == today, 5), V.config())
@@ -3399,10 +3484,10 @@ def test_update():
     check("[O] on it returns to Settings", V.wait_screen("screen=settings", 5), V.screen())
     drop(V)
 
-    # ---- 3. the next day: asked again; the highest number wins (0.10.0 is above 0.9.10)
-    gh.releases = [gh.release("v0.9.10", pre=True), gh.release("v0.10.0", pre=True), gh.release("v0.9.4")]
+    # ---- 3. the next day: asked again; the highest number wins (1.1.0 is above 1.0.10)
+    gh.releases = [gh.release("v1.0.10", pre=True), gh.release("v1.1.0", pre=True), gh.release("v0.9.4")]
     V = vita("upd3", cfg={"updateAskedDay": today}, date="2026-11-07")
-    check("the next day: asked again, and 0.10.0 is above 0.9.10", V.wait_screen("A new version is available", 12) and "v0.10.0" in V.screen(), V.screen())
+    check("the next day: asked again, and 1.1.0 is above 1.0.10", V.wait_screen("A new version is available", 12) and "v1.1.0" in V.screen(), V.screen())
     check("... today's date is stored", wait_for(lambda: V.config().get("updateAskedDay") == 20261107, 5), V.config())
     drop(V)
 
@@ -3423,7 +3508,7 @@ def test_update():
     drop(V)
 
     # ---- 5. up to date: silent at start, a message from the About box
-    gh.releases = [gh.release("v0.9.9"), gh.release("v0.9.4")]
+    gh.releases = [gh.release("v1.0.1"), gh.release("v0.9.4")]
     gh.hits.clear()
     V = vita("upd5")
     VER_NOW = VERSION
@@ -3442,17 +3527,17 @@ def test_update():
     #         (the running app cannot be replaced by the system installer: error 0x80101114 on a real Vita)
     appdir = os.path.join(ROOT, "appdir")
     old_vpk = os.path.join(ROOT, "old.vpk")
-    make_vpk(old_vpk, title="VitaSend", tid="LSND00001", ver="00.98")
+    make_vpk(old_vpk, title="VitaSend", tid="LSND00001", ver="01.00")
     zipfile.ZipFile(old_vpk).extractall(appdir)
     open(os.path.join(appdir, "eboot.bin"), "wb").write(make_eboot(False, seed=9))   # the installed (old) program differs from the new one
     old_eboot = open(os.path.join(appdir, "eboot.bin"), "rb").read()
-    gh.releases = [gh.release("v0.9.9"), gh.release("v0.9.4")]
+    gh.releases = [gh.release("v1.0.1"), gh.release("v0.9.4")]
     gh.chunked = True
     V = vita("upd6", env={"LS_APP_DIR": appdir})
-    check("v0.9.9 is offered", V.wait_screen("A new version is available", 12) and "v0.9.9" in V.screen() and "pre-release" not in V.screen(), V.screen())
+    check("v1.0.1 is offered", V.wait_screen("A new version is available", 12) and "v1.0.1" in V.screen() and "pre-release" not in V.screen(), V.screen())
     V.keys("cross")
     check("[X] downloads it (through the redirect)", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-800:])
-    check("the downloaded file is kept and checked", wait_for(lambda: os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.9.vpk")), 3) and sha(open(os.path.join(V.data, "update", "VitaSend-v0.9.9.vpk"), "rb").read()) == good)
+    check("the downloaded file is kept and checked", wait_for(lambda: os.path.exists(os.path.join(V.data, "update", "VitaSend-v1.0.1.vpk")), 3) and sha(open(os.path.join(V.data, "update", "VitaSend-v1.0.1.vpk"), "rb").read()) == good)
     check("the installer says what happens to settings and files", V.has("Your settings and received files stay") and V.has("starts again by itself"), V.screen())
     V.keys("cross")
     check("the update is prepared and the updater is started", V.wait_screen("Finishing the update", 20), V.screen() + V.log()[-600:])
@@ -3507,31 +3592,31 @@ def test_update():
     VITAS.remove(V)
 
     # ---- 7. a wrong checksum is refused and the file deleted
-    gh.sums = f"{'0' * 64}  VitaSend-v0.9.9.vpk\n".encode()
+    gh.sums = f"{'0' * 64}  VitaSend-v1.0.1.vpk\n".encode()
     V = vita("upd7")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("a wrong checksum: refused", V.wait_screen("Download failed", 20) and V.wait_screen("checksum does not match", 2), V.screen())
-    check("... nothing stays on the card", not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.9.vpk")) and not os.path.exists(os.path.join(V.data, "update", "VitaSend-v0.9.9.vpk.part")))
+    check("... nothing stays on the card", not os.path.exists(os.path.join(V.data, "update", "VitaSend-v1.0.1.vpk")) and not os.path.exists(os.path.join(V.data, "update", "VitaSend-v1.0.1.vpk.part")))
     check("... and 'Try again' is offered", "Try again" in V.screen(), V.screen())
-    gh.sums = f"{good}  VitaSend-v0.9.9.vpk\n".encode()
+    gh.sums = f"{good}  VitaSend-v1.0.1.vpk\n".encode()
     V.keys("square")
     check("[SQUARE] tries the download again (now with the right checksum)", V.wait_screen("Install the new VitaSend?", 20), V.screen())
     drop(V)
 
     # ---- 8. no SHA256SUMS.txt: GitHub's own digest is used; none at all: refused
-    gh.releases = [gh.release("v0.9.9", sums=False, digest=good)]
+    gh.releases = [gh.release("v1.0.1", sums=False, digest=good)]
     V = vita("upd8")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("without SHA256SUMS.txt the digest GitHub lists is used", V.wait_screen("Install the new VitaSend?", 20), V.screen() + V.log()[-500:])
     drop(V)
-    gh.releases = [gh.release("v0.9.9", sums=False)]
+    gh.releases = [gh.release("v1.0.1", sums=False)]
     V = vita("upd9")
     V.wait_screen("A new version is available", 12); V.keys("cross")
     check("no checksum anywhere: the download is not trusted", V.wait_screen("Download failed", 15) and V.wait_screen("publishes no checksum", 2), V.screen())
     drop(V)
 
     # ---- 9. no .vpk on the release
-    gh.releases = [gh.release("v0.9.9", vpk=False, sums=False)]
+    gh.releases = [gh.release("v1.0.1", vpk=False, sums=False)]
     V = vita("upd10")
     V.goto_setting("about"); V.keys("cross")
     check("a release without a package: a clear message", V.wait_screen("Update check failed", 12) and V.wait_screen("no .vpk", 2), V.screen())
@@ -3539,14 +3624,14 @@ def test_update():
     drop(V)
 
     # ---- 10. certificates are really checked
-    gh.releases = [gh.release("v0.9.9")]
+    gh.releases = [gh.release("v1.0.1")]
     V = vita("upd11", ca=os.path.join(base, "evil.pem"))
     V.goto_setting("about"); V.keys("cross")
-    check("a certificate from an unknown authority is refused", V.wait_screen("Update check failed", 12) and "v0.9.9" not in V.screen(), V.screen())
+    check("a certificate from an unknown authority is refused", V.wait_screen("Update check failed", 12) and "v1.0.1" not in V.screen(), V.screen())
     check("... the log says why", wait_for(lambda: "not trusted" in V.log().lower() or "verif" in V.log().lower(), 3), V.log()[-500:])
     drop(V)
     gh2 = FakeGitHub(base, 53792, host_name="other.test")
-    gh2.releases = [gh2.release("v0.9.9")]
+    gh2.releases = [gh2.release("v1.0.1")]
     V = vita("upd12", api="localhost:53792")
     V.goto_setting("about"); V.keys("cross")
     check("a certificate for another host name is refused", V.wait_screen("Update check failed", 12) and "A new version" not in V.screen(), V.screen())
@@ -3561,7 +3646,7 @@ def test_update():
     drop(V)
 
     # ---- 12. the automatic question never interrupts a transfer request
-    gh.releases = [gh.release("v0.9.10")]
+    gh.releases = [gh.release("v1.0.10")]
     V = vita("upd14", delay="2500")
     files = [file_entry("id-1", "hello.bin", rnd(2000, 1))]
     t, box = prepare_async(V.port, files, alias="Banana PC")
@@ -3602,6 +3687,7 @@ try:
     if args.only in ("", "update"): test_update()
     if args.only in ("", "fileops"): test_fileops()
     if args.only in ("", "history"): test_history_ui(); test_helper_screen()
+    if args.only in ("", "pong"): test_pong()
 finally:
     finish_all()
 
